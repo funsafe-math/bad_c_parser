@@ -1,0 +1,182 @@
+use std::str::FromStr;
+use crate::ast::*;
+// https://norasandler.com/2017/11/29/Write-a-Compiler.html
+
+grammar;
+
+List<T> : Vec<T> = {
+    <v:T> => vec![v],
+    <v:List<T>> <e:T> => {let mut v = v; v.push(e); v},
+}
+
+CommaList<T> : Vec<T> = {
+    <v:T> => vec![v],
+    <v:CommaList<T>> "," <e:T> => {let mut v = v; v.push(e); v},
+}
+
+pub FunctionDefinition: FunctionDefinition = {
+    <t:TypeSpecifier> <i:Identifier> "(" <p:ParameterList> ")" <c:CompoundStatement> => FunctionDefinition::new(<>),
+}
+
+pub Identifier: Identifier = <s:r"[a-zA-Z_][0-9a-zA-Z_]*"> => Identifier{name: s.to_string()};
+
+pub If: If = {
+    "if" "(" <e:Expression> ")" <s:Statement> => If::SingleBranch(e, Box::new(s)),
+    "if" "(" <e:Expression> ")" <s:Statement> "else" <r:Statement> => If::TwoBranch(e, Box::new(s), Box::new(r)),
+}
+
+
+pub Statement: Statement = {
+    "return" <e:Expression> ";" => Statement::ReturnExpression(e),
+    <e:Expression> ";" => Statement::Expression(e),
+    ";" => Statement::Empty,
+    <CompoundStatement> => Statement::CompoundStatement(<>),
+    "for" "(" <l:Expression?> ";" <m:Expression?> ";" <r:Expression?> ")" <s:Statement> => Statement::For(l, m, r, Box::new(s)),
+    "for" "(" <l:VariableDeclaration> <m:Expression?> ";" <r:Expression?> ")" <s:Statement> => Statement::ForDecl(l, m, r, Box::new(s)),
+//    If => Statement::If(<>),
+}
+
+//    <i:Identifier> "=" <e:Expression> ";" => Statement::Assignment(<>),
+//   <t:TypeSpecifier> <i:Identifier> ";" => Statement::VariableDeclaration(<>),
+//   <t:TypeSpecifier> <i:Identifier> "=" <e:Expression> ";" => Statement::VariableDeclarationAssignment(<>),
+
+pub CompoundStatement: CompoundStatement = {
+    "{" "}" => CompoundStatement::Empty,
+    "{" <s:BlockList> "}" => CompoundStatement::StatementList(s),
+}
+
+pub ParameterList = CommaList<VariableDeclaration>;
+
+pub BlockList = List<BlockItem>;
+
+BlockItem: BlockItem = {
+   <Statement> =>BlockItem::Statement(<>),
+   <VariableDeclaration> =>BlockItem::Declaration(<>),
+}
+
+pub Expression: Box<Expression> = {
+    <ConditionalExpression> => <>,
+    <Identifier> "=" <Expression> => Box::new(Expression::Assignment(<>)),
+    <Identifier> <CompoundAssignmentOp> <Expression> => Box::new(Expression::CompoundAssignment(<>)),
+}
+
+ConditionalExpression: Box<Expression> = {
+    <LogicalOrExpression> => <>,
+    <LogicalOrExpression> "?" <Expression> ":" <ConditionalExpression> => Box::new(Expression::Conditional(<>))
+}
+
+pub LogicalOrExpression: Box<Expression> = {
+    LogicalAndExpression => <>,
+    LogicalAndExpression OrOp LogicalAndExpression => Box::new(Expression::Op(<>)),
+}
+
+LogicalAndExpression: Box<Expression> = {
+    <e:EqualityExpression> => e,
+    <l:EqualityExpression> <o:AndOp> <r:EqualityExpression> => Box::new(Expression::Op(<>)),
+}
+
+EqualityExpression: Box<Expression> = {
+    <e:RelationalExpression> => e,
+    <l:EqualityExpression> <o:EqualityOp> <r:RelationalExpression> => Box::new(Expression::Op(<>)),
+}
+
+RelationalExpression: Box<Expression> = {
+    <a:AdditiveExpression> => a,
+    <l:RelationalExpression> <o:RelationalOp> <r:AdditiveExpression> => Box::new(Expression::Op(<>)),
+}
+
+
+AdditiveExpression: Box<Expression> = {
+    <t:Term> => t,
+    <l:AdditiveExpression> <o:TermOp> <e:Term> => Box::new(Expression::Op(<>)),
+}
+
+Term: Box<Expression> = {
+    <l:Factor> => l,
+    <l:Term> <o:FactorOp> <r:Factor> => Box::new(Expression::Op(<>)),
+}
+
+OrOp: BinaryOperator = "||" => BinaryOperator::LogicOr;
+
+AndOp: BinaryOperator = "&&" => BinaryOperator::LogicAnd;
+
+CompoundAssignmentOp: BinaryOperator = {
+    "+=" => BinaryOperator::Add,
+    "-=" => BinaryOperator::Subtract,
+}
+
+EqualityOp: BinaryOperator = {
+    "==" => BinaryOperator::LogicEq,
+    "!=" => BinaryOperator::LogicNeq,
+}
+
+RelationalOp: BinaryOperator = {
+    ">" => BinaryOperator::GreaterThen,
+    "<" => BinaryOperator::LessThen,
+    ">=" => BinaryOperator::Greq,
+    "<=" => BinaryOperator::Leq,
+}
+
+FactorOp: BinaryOperator = {
+    "*" => BinaryOperator::Multiply,
+    "/" => BinaryOperator::Multiply,
+    "%" => BinaryOperator::Modulo,
+}
+
+TermOp: BinaryOperator = {
+    "+" => BinaryOperator::Add,
+    "-" => BinaryOperator::Subtract,
+}
+
+pub Factor: Box<Expression> = {
+    "(" <e:Factor> ")" => e,
+    <o:UnaryOp> <e:Factor> => Box::new(Expression::UnaryOp(<>)),
+    <n:LiteralNum> => Box::new(Expression::LiteralNum(n)),
+    <n:LiteralHex> => Box::new(Expression::LiteralNum(n)),
+    <n:LiteralBin> => Box::new(Expression::LiteralNum(n)),
+    <i:Identifier> => Box::new(Expression::Variable(i)),
+}
+
+LiteralNum: i64 = <s:r"[0-9]+"> => i64::from_str(s).unwrap();
+LiteralHex: i64 = <s:r"0x[0-f]+"> => i64::from_str_radix(s.strip_prefix("0x").unwrap(), 16).unwrap();
+LiteralBin: i64 = <s:r"0b[0-f]+"> => i64::from_str_radix(s.strip_prefix("0b").unwrap(), 2).unwrap();
+
+pub TypeSpecifier: TypeSpecifier = {
+    Char => TypeSpecifier::Char,
+    Short => TypeSpecifier::Short,
+    Int => TypeSpecifier::Int,
+    Long => TypeSpecifier::Long,
+    Signed => TypeSpecifier::Signed,
+    Unsigned => TypeSpecifier::Unsigned,
+    Float => TypeSpecifier::Float,
+    Double => TypeSpecifier::Double,
+    Void => TypeSpecifier::Void,
+}
+
+pub VariableDeclaration: VariableDeclaration  = {
+    <t:TypeSpecifier> <i:Identifier> ";" => VariableDeclaration::new(t,i,None),
+    <t:TypeSpecifier> <i:Identifier> "=" <e:Expression> ";" => VariableDeclaration::new(t,i,Some(e)),
+}
+
+pub UnaryOp: UnaryOp = {
+    "-" => UnaryOp::Minus,
+    "~" => UnaryOp::BitwiseNegation,
+    "!" => UnaryOp::LogicalNegation,
+    "++" => UnaryOp::PlusPlus,
+    "--" => UnaryOp::MinusMinus,
+}
+
+Char = "char";
+Short = "short";
+Int = "int";
+Long = "long";
+Signed = "signed";
+Unsigned = "unsigned";
+Float = "float";
+Double = "double";
+Const = "const";
+Volatile = "volatile";
+Void = "void";
+
+
+
