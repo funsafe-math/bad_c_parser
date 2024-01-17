@@ -57,7 +57,7 @@ fn calculator1() {
         .is_ok());
 
     assert!(calculator1::IfParser::new()
-        .parse("if (1 + 2 == 4) return 1; else return 2;")
+        .parse("if (1 + 2 == 4){ return 1;} else return 2;")
         .is_ok());
 
     assert!(calculator1::ExpressionParser::new()

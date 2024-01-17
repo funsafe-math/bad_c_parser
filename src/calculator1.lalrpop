@@ -33,7 +33,7 @@ pub Identifier: Identifier = <s:r"[a-zA-Z_][0-9a-zA-Z_]*"> => Identifier{name: s
 
 pub If: If = {
     "if" "(" <e:Expression> ")" <s:Statement> => If::SingleBranch(e, Box::new(s)),
-    "if" "(" <e:Expression> ")" <s:Statement> "else" <r:Statement> => If::TwoBranch(e, Box::new(s), Box::new(r)),
+    "if" "(" <e:Expression> ")" <s:CompoundStatement> "else" <r:Statement> => If::TwoBranch(e, Box::new(Statement::CompoundStatement(s)), Box::new(r)),
 }
 
 
@@ -48,7 +48,7 @@ pub Statement: Statement = {
     "do" <s:Statement> "while" "(" <e:Expression> ")" ";" => Statement::Do(Box::new(s), e),
     "break" ";" => Statement::Break,
     "continue" ";" => Statement::Continue,
-//    If => Statement::If(<>),
+    If => Statement::If(<>),
 }
 
 //    <i:Identifier> "=" <e:Expression> ";" => Statement::Assignment(<>),
