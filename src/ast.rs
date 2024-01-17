@@ -1,24 +1,52 @@
+#[derive(Debug)]
 pub struct Program {
-    function: Box<FunctionDefinition>,
+    pub function: Vec<TopLevelItem>,
 }
 
-pub trait Evaluate{
-    fn evaluate(&self) -> i64;}
+pub trait Evaluate {
+    fn evaluate(&self) -> i64;
+}
+
+#[derive(Debug)]
+pub enum TopLevelItem {
+    Function(FunctionDefinition),
+    VariableDeclaration(VariableDeclaration),
+}
 
 #[derive(Debug)]
 pub struct FunctionDefinition {
     pub return_type: TypeSpecifier,
     pub identifier: Identifier,
-    pub arguments: Vec<VariableDeclaration>,
+    pub arguments: Vec<Parameter>,
     pub statement: CompoundStatement,
 }
 impl FunctionDefinition {
-    pub fn new(return_type: TypeSpecifier, identifier: Identifier, arguments: Vec<VariableDeclaration>, statement: CompoundStatement) -> Self {
+    pub fn new(
+        return_type: TypeSpecifier,
+        identifier: Identifier,
+        arguments: Vec<Parameter>,
+        statement: CompoundStatement,
+    ) -> Self {
         Self {
             return_type,
             identifier,
             arguments,
             statement,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct Parameter {
+    pub type_specifier: TypeSpecifier,
+    pub identifier: Identifier,
+}
+
+impl Parameter {
+    pub fn new(type_specifier: TypeSpecifier, identifier: Identifier) -> Self {
+        Self {
+            type_specifier,
+            identifier,
         }
     }
 }
@@ -48,10 +76,22 @@ pub enum Statement {
     Assignment(Identifier, Box<Expression>),
     If(If),
     CompoundStatement(CompoundStatement),
-    For(Option<Box<Expression>>, Option<Box<Expression>>, Option<Box<Expression>>, Box<Statement>),
-    ForDecl(VariableDeclaration, Option<Box<Expression>>, Option<Box<Expression>>, Box<Statement>),
+    For(
+        Option<Box<Expression>>,
+        Option<Box<Expression>>,
+        Option<Box<Expression>>,
+        Box<Statement>,
+    ),
+    ForDecl(
+        VariableDeclaration,
+        Option<Box<Expression>>,
+        Option<Box<Expression>>,
+        Box<Statement>,
+    ),
     While(Box<Expression>, Box<Statement>),
     Do(Box<Statement>, Box<Expression>),
+    Break,
+    Continue,
     Empty,
 }
 
@@ -70,6 +110,7 @@ pub enum Expression {
     Conditional(Box<Expression>, Box<Expression>, Box<Expression>),
     Assignment(Identifier, Box<Expression>),
     CompoundAssignment(Identifier, BinaryOperator, Box<Expression>),
+    FunctionCall(Identifier, Vec<Box<Expression>>), // name+arguments
 }
 
 // Precedence: https://en.cppreference.com/w/c/language/operator_precedence
@@ -90,7 +131,6 @@ pub enum BinaryOperator {
     Leq,
 }
 
-
 #[derive(Debug)]
 pub enum TypeSpecifier {
     Char,
@@ -110,15 +150,23 @@ pub struct Identifier {
 }
 
 #[derive(Debug)]
-pub struct VariableDeclaration{
-   type_specifier: TypeSpecifier,
-   identifier: Identifier,
-   expression: Option<Box<Expression>>,
+pub struct VariableDeclaration {
+    type_specifier: TypeSpecifier,
+    identifier: Identifier,
+    expression: Option<Box<Expression>>,
 }
 
 impl VariableDeclaration {
-    pub fn new(type_specifier: TypeSpecifier, identifier: Identifier, expression: Option<Box<Expression>>) -> Self {
-        Self { type_specifier, identifier, expression }
+    pub fn new(
+        type_specifier: TypeSpecifier,
+        identifier: Identifier,
+        expression: Option<Box<Expression>>,
+    ) -> Self {
+        Self {
+            type_specifier,
+            identifier,
+            expression,
+        }
     }
 }
 
@@ -130,4 +178,3 @@ pub enum UnaryOp {
     PlusPlus,
     MinusMinus,
 }
-

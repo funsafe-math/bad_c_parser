@@ -18,9 +18,10 @@ fn calculator1() {
         .parse("1 * 2 + 3*2 - 5 -")
         .is_err());
 
-//   assert!(calculator1::ParameterListParser::new()
-//       .parse("int argc, char argv, long ptr")
-//       .is_ok());
+    assert!(calculator1::ParameterListParser::new()
+        .parse("int argc, char argv, long ptr")
+        .is_ok());
+
     assert!(calculator1::StatementParser::new()
         .parse("abc = 1;")
         .is_ok());
@@ -72,9 +73,27 @@ fn calculator1() {
         .is_ok());
 
     assert!(calculator1::StatementParser::new()
-        .parse("for(; i < 10;++i){return 1;}")
+        .parse("for(int i = 1; i < 10;++i){return 1;}")
         .is_ok());
 
+    assert!(calculator1::StatementParser::new()
+        .parse("for(i = 1; i < 10;++i){return 1;}")
+        .is_ok());
+
+    assert!(calculator1::StatementParser::new()
+        .parse("while (i == 1) {return 1;}")
+        .is_ok());
+
+    assert!(calculator1::StatementParser::new()
+        .parse("do { i+= 1; } while (1);")
+        .is_ok());
+    assert!(calculator1::ProgramParser::new()
+        .parse("int main() {a;}")
+        .is_ok());
+
+    assert!(calculator1::ProgramParser::new()
+        .parse("int main() { main(1,2,3,4); }")
+        .is_ok());
     //    assert!(calculator1::TermParser::new().parse("22").is_ok());
     //    assert!(calculator1::TermParser::new().parse("(22)").is_ok());
     //    assert!(calculator1::TermParser::new().parse("((((22))))").is_ok());
@@ -104,8 +123,27 @@ fn main() {
     // );
     println!(
         "Parsing function: {:#?}",
-        calculator1::StatementParser::new().parse("for(int i = 1; i < 10;++i){return 1;}")
+        calculator1::ProgramParser::new().parse("void foo() {} int main() { main(1,2,3,4); }")
     );
+
+    println!(
+        "Parsing function: {:#?}",
+        calculator1::ProgramParser::new().parse("
+            int fib(int n) {
+                if (n == 0 || n == 1) {
+                    return n;
+                } else {
+                    return fib(n - 1) + fib(n - 2);
+                }
+            }
+
+            int main() {
+                int n = 10;
+                return fib(n);
+            }
+    ")
+    );
+
     // println!(
     //     "Parsing expression: {:#?}",
     //     calculator1::ExpressionParser::new().parse("1 == 2 + 5 && 2 != 5*2")

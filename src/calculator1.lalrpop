@@ -14,8 +14,19 @@ CommaList<T> : Vec<T> = {
     <v:CommaList<T>> "," <e:T> => {let mut v = v; v.push(e); v},
 }
 
+
+pub TopLevelItem: TopLevelItem = {
+    <FunctionDefinition> => TopLevelItem::Function(<>),
+    <VariableDeclaration> => TopLevelItem::VariableDeclaration(<>),
+}
+
+pub Program: Program = {
+    List<TopLevelItem> => Program{function: <>},
+}
+
 pub FunctionDefinition: FunctionDefinition = {
     <t:TypeSpecifier> <i:Identifier> "(" <p:ParameterList> ")" <c:CompoundStatement> => FunctionDefinition::new(<>),
+    <t:TypeSpecifier> <i:Identifier> "(" ")" <c:CompoundStatement> => FunctionDefinition::new(t, i, vec![], c),
 }
 
 pub Identifier: Identifier = <s:r"[a-zA-Z_][0-9a-zA-Z_]*"> => Identifier{name: s.to_string()};
@@ -33,6 +44,10 @@ pub Statement: Statement = {
     <CompoundStatement> => Statement::CompoundStatement(<>),
     "for" "(" <l:Expression?> ";" <m:Expression?> ";" <r:Expression?> ")" <s:Statement> => Statement::For(l, m, r, Box::new(s)),
     "for" "(" <l:VariableDeclaration> <m:Expression?> ";" <r:Expression?> ")" <s:Statement> => Statement::ForDecl(l, m, r, Box::new(s)),
+    "while" "(" <e:Expression> ")" <s:Statement> => Statement::While(e, Box::new(s)),
+    "do" <s:Statement> "while" "(" <e:Expression> ")" ";" => Statement::Do(Box::new(s), e),
+    "break" ";" => Statement::Break,
+    "continue" ";" => Statement::Continue,
 //    If => Statement::If(<>),
 }
 
@@ -45,7 +60,11 @@ pub CompoundStatement: CompoundStatement = {
     "{" <s:BlockList> "}" => CompoundStatement::StatementList(s),
 }
 
-pub ParameterList = CommaList<VariableDeclaration>;
+pub ParameterList = CommaList<Parameter>;
+
+Parameter: Parameter = {
+    <TypeSpecifier> <Identifier> => Parameter::new(<>),
+}
 
 pub BlockList = List<BlockItem>;
 
@@ -94,6 +113,12 @@ AdditiveExpression: Box<Expression> = {
 Term: Box<Expression> = {
     <l:Factor> => l,
     <l:Term> <o:FactorOp> <r:Factor> => Box::new(Expression::Op(<>)),
+    <FunctionCall> => <>,
+}
+
+FunctionCall: Box<Expression> = {
+    <i:Identifier> "(" ")" => Box::new(Expression::FunctionCall(i, vec![])),
+    <i:Identifier> "(" <e:CommaList<Expression>> ")" => Box::new(Expression::FunctionCall(i, e)),
 }
 
 OrOp: BinaryOperator = "||" => BinaryOperator::LogicOr;
