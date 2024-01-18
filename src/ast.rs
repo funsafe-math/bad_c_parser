@@ -1,10 +1,6 @@
 #[derive(Debug)]
 pub struct Program {
-    pub function: Vec<TopLevelItem>,
-}
-
-pub trait Evaluate {
-    fn evaluate(&self) -> i64;
+    pub top_level_items: Vec<TopLevelItem>,
 }
 
 #[derive(Debug)]
@@ -151,9 +147,9 @@ pub struct Identifier {
 
 #[derive(Debug)]
 pub struct VariableDeclaration {
-    type_specifier: TypeSpecifier,
-    identifier: Identifier,
-    expression: Option<Box<Expression>>,
+    pub type_specifier: TypeSpecifier,
+    pub identifier: Identifier,
+    pub expression: Option<Box<Expression>>,
 }
 
 impl VariableDeclaration {

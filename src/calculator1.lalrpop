@@ -21,7 +21,7 @@ pub TopLevelItem: TopLevelItem = {
 }
 
 pub Program: Program = {
-    List<TopLevelItem> => Program{function: <>},
+    List<TopLevelItem> => Program{top_level_items: <>},
 }
 
 pub FunctionDefinition: FunctionDefinition = {

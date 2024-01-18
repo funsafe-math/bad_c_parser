@@ -1,11 +1,16 @@
-use lalrpop_util::lalrpop_mod;
-
 use crate::calculator1::ExpressionParser;
 use crate::calculator1::FunctionDefinitionParser;
 use crate::calculator1::IdentifierParser;
 use crate::calculator1::IfParser;
 use crate::calculator1::StatementParser;
+use lalrpop_util::lalrpop_mod;
+use std::env;
+use std::fs;
+use std::fs::File;
+use std::io::Write;
 mod ast;
+mod evalue;
+use evalue::*;
 
 lalrpop_mod!(pub calculator1); // synthesized by LALRPOP
                                //
@@ -25,9 +30,6 @@ fn calculator1() {
     assert!(calculator1::StatementParser::new()
         .parse("abc = 1;")
         .is_ok());
-    //   assert!(calculator1::StatementParser::new()
-    //       .parse("int abc;")
-    //       .is_ok());
 
     assert!(calculator1::StatementParser::new()
         .parse("abc = 1+2+3;")
@@ -37,20 +39,17 @@ fn calculator1() {
 
     assert!(calculator1::IdentifierParser::new().parse("x").is_ok());
 
-    //   assert!(calculator1::StatementListParser::new()
-    //       .parse("int x ; abc = 1; xyz = 2;")
-    //       .is_ok());
-    //   assert!(calculator1::CompoundStatementParser::new()
-    //       .parse("{ int x ; abc = 1; xyz = 2; }")
-    //       .is_ok());
-    //
-    //   assert!(calculator1::FunctionDefinitionParser::new()
-    //       .parse("int main(int argc, int argv){ int x =1; int y; abc = 1; xyz = 2; return 1+2+y; }")
-    //       .is_ok());
+    assert!(calculator1::CompoundStatementParser::new()
+        .parse("{ int x ; abc = 1; xyz = 2; }")
+        .is_ok());
 
-    //   assert!(calculator1::IfParser::new()
-    //       .parse("if (1 + 2 == 4) { return 1;}")
-    //       .is_ok());
+    assert!(calculator1::FunctionDefinitionParser::new()
+        .parse("int main(int argc, int argv){ int x =1; int y; abc = 1; xyz = 2; return 1+2+y; }")
+        .is_ok());
+
+    assert!(calculator1::IfParser::new()
+        .parse("if (1 + 2 == 4) { return 1;}")
+        .is_ok());
 
     assert!(calculator1::IfParser::new()
         .parse("if (1 + 2 == 4) return 1;")
@@ -121,28 +120,65 @@ fn main() {
     //     "Parsing identifier: {:#?}",
     //     calculator1::IdentifierParser::new().parse("Bad_apples123abc")
     // );
-    println!(
-        "Parsing function: {:#?}",
-        calculator1::ProgramParser::new().parse("void foo() {} int main() { main(1,2,3,4); }")
-    );
+    // println!(
+    //     "Parsing function: {:#?}",
+    //     calculator1::ProgramParser::new().parse("void foo() {} int main() { main(1,2,3,4); }")
+    // );
 
-    println!(
-        "Parsing function: {:#?}",
-        calculator1::ProgramParser::new().parse("
-            int fib(int n) {
-                if (n == 0 || n == 1) {
-                    return n;
-                } else {
-                    return fib(n - 1) + fib(n - 2);
+    // let parsed = calculator1::ProgramParser::new().parse(
+    //     "
+    //         int fib(int n) {
+    //             if (n == 0 || n == 1) {
+    //                 print(1);
+    //                 return n;
+    //             } else {
+    //                 return fib(n - 1) + fib(n - 2);
+    //             }
+    //         }
+
+    //         int main() {
+    //             int n = 10;
+    //             return fib(n);
+    //         }
+    // ",
+    // );
+
+    // println!("Parsing function: {:#?}", &parsed);
+
+    // if let Ok(result) = &parsed {
+    //     result;
+    // }
+
+    // let args: Vec<String> = env::args().collect();
+    // dbg!(args);
+
+    let filepath = "/home/wojciech/projects/studia/metody-i-algorytmy-kompilacji/projekt/parser_project/output/example.c";
+    let contents = fs::read_to_string(filepath);
+    if let Ok(code) = contents {
+        let parsed = calculator1::ProgramParser::new().parse(&code);
+        if let Ok(parsed) = &parsed {
+            println!("Parsed: {:#?}", &parsed);
+            let asm: String = parsed.compile();
+            println!("Generated asm: \n{}", asm);
+            let mut file = File::create("/home/wojciech/projects/studia/metody-i-algorytmy-kompilacji/projekt/parser_project/output/output.s");
+            match file {
+                Ok(mut file) => {
+                    let result = file.write_all(asm.as_bytes());
+                    match result {
+                        Ok(ok) => {}
+                        Err(err) => println!("Failed to save to file, because: {}", err),
+                    }
+                }
+                Err(error) => {
+                    println!("Failed to open file, because: {}", error)
                 }
             }
-
-            int main() {
-                int n = 10;
-                return fib(n);
-            }
-    ")
-    );
+        } else {
+            println!("Failed to parse file {}", filepath);
+        }
+    } else {
+        println!("Failed to open {}", filepath);
+    }
 
     // println!(
     //     "Parsing expression: {:#?}",
