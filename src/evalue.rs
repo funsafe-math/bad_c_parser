@@ -1,4 +1,4 @@
-use std::{collections::HashMap, hash::Hash, iter::Map};
+use std::{collections::HashMap, hash::Hash, iter::Map, fmt::format};
 
 use crate::ast::*;
 
@@ -55,6 +55,7 @@ struct StackFrme {
     pub variables: HashMap<String, usize>,
     biggest_ix: usize,
     pub size_on_stack: usize,
+    pub last_label: usize,
 }
 
 impl StackFrme {
@@ -69,6 +70,8 @@ impl StackFrme {
     fn get_variable_ix(&self, name: &str) -> Option<usize> {
         return self.variables.get(name).copied();
     }
+
+
 }
 
 pub trait Compile {
@@ -93,6 +96,7 @@ impl Compile for VariableDeclaration {
             println!("Error, variable {} already exists", &self.identifier.name);
         } else {
             ctx.top_frame().add_variable(&self.identifier.name);
+            ctx.save_variable(&self.identifier.name);
         }
     }
 }
@@ -254,8 +258,31 @@ impl Compile for Statement {
                 expression.compile(ctx);
             }
             Statement::Assignment(_, _) => todo!(),
-            Statement::If(_) => todo!(),
-            Statement::CompoundStatement(_) => todo!(),
+            Statement::If(if_statement) => {
+                match if_statement {
+                    If::SingleBranch(expr, statement) => {
+                        expr.compile(ctx);
+                        let label_ix = 0;
+                        let post_conditional = format!(".LBBL{}_post_conditional", label_ix);
+                        ctx.asm.push(format!("cmp rax, 0"));
+                        ctx.asm.push(format!("je {}", post_conditional));
+                        statement.compile(ctx);
+                        ctx.asm.push(format!("{}:", post_conditional));
+                    }
+                    If::TwoBranch(_, _, _) => todo!(),
+                }
+            },
+            Statement::CompoundStatement(compound_statement) => {
+                match compound_statement {
+                    CompoundStatement::Empty => {},
+                    CompoundStatement::StatementList(list) => {
+                        for item in list {
+                            item.compile(ctx);
+                        }
+                    },
+                }
+
+            },
             Statement::For(_, _, _, _) => todo!(),
             Statement::ForDecl(_, _, _, _) => todo!(),
             Statement::While(_, _) => todo!(),
@@ -289,7 +316,7 @@ impl Compile for FunctionDefinition {
 
         let first_function_instruction_ix = ctx.asm.len();
 
-        let mut required_stack = self.required_stack();
+        let mut required_stack = self.required_stack() + 8;  // +8 for return ptr
         // Setup new stack frame
         let mut frame = StackFrme::default();
 
@@ -382,6 +409,7 @@ impl Program {
 
         // extern printf
         // "#.to_string());
+        ctx.asm.push(format!("extern putchar"));
 
         ctx.asm.iter().map(|x| format!("{}\n", x)).collect()
     }
