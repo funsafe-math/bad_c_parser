@@ -13,12 +13,10 @@ mod evalue;
 use evalue::*;
 
 lalrpop_mod!(pub c); // synthesized by LALRPOP
-                               //
+                     //
 #[test]
 fn calculator1() {
-    assert!(c::ExpressionParser::new()
-        .parse("1 * 2 + 3*2 - 5")
-        .is_ok());
+    assert!(c::ExpressionParser::new().parse("1 * 2 + 3*2 - 5").is_ok());
     assert!(c::ExpressionParser::new()
         .parse("1 * 2 + 3*2 - 5 -")
         .is_err());
@@ -27,13 +25,9 @@ fn calculator1() {
         .parse("int argc, char argv, long ptr")
         .is_ok());
 
-    assert!(c::StatementParser::new()
-        .parse("abc = 1;")
-        .is_ok());
+    assert!(c::StatementParser::new().parse("abc = 1;").is_ok());
 
-    assert!(c::StatementParser::new()
-        .parse("abc = 1+2+3;")
-        .is_ok());
+    assert!(c::StatementParser::new().parse("abc = 1+2+3;").is_ok());
 
     assert!(c::IdentifierParser::new().parse("abcd").is_ok());
 
@@ -59,13 +53,9 @@ fn calculator1() {
         .parse("if (1 + 2 == 4){ return 1;} else return 2;")
         .is_ok());
 
-    assert!(c::ExpressionParser::new()
-        .parse("1 == 1 ? x : y")
-        .is_ok());
+    assert!(c::ExpressionParser::new().parse("1 == 1 ? x : y").is_ok());
 
-    assert!(c::StatementParser::new()
-        .parse("{{{{{}}}}}")
-        .is_ok());
+    assert!(c::StatementParser::new().parse("{{{{{}}}}}").is_ok());
 
     assert!(c::StatementParser::new()
         .parse("{i = 1;{{{y=2;{}}}x = 5;}}")
@@ -86,9 +76,7 @@ fn calculator1() {
     assert!(c::StatementParser::new()
         .parse("do { i+= 1; } while (1);")
         .is_ok());
-    assert!(c::ProgramParser::new()
-        .parse("int main() {a;}")
-        .is_ok());
+    assert!(c::ProgramParser::new().parse("int main() {a;}").is_ok());
 
     assert!(c::ProgramParser::new()
         .parse("int main() { main(1,2,3,4); }")
@@ -99,82 +87,65 @@ fn calculator1() {
     //    assert!(c::TermParser::new().parse("((22)").is_err());
 }
 
+fn print_souce_location(contents: &str, location: usize){
+    // contents.find(pat)
+    // let (before, after) = contents.split_at(location);
+    // println!("{}", before);
+    let mut from_start = 0;
+    for line in contents.split("\n") {
+        if from_start < location && location < (from_start + line.len()){
+            let line_position = location - from_start;
+            println!("{}", line);
+            println!("{}^", " ".repeat(line_position))
+        }
+        from_start += line.len() + 1; // +1 for newline
+    }
+
+}
+
 fn main() {
-    // println!(
-    //     "Parsing literal expression: {:#?}",
-    //     c::ExpressionParser::new().parse("1")
-    // );
-    // println!(
-    //     "Parsing literal hex expression: {:#?}",
-    //     c::ExpressionParser::new().parse("0xbadbeef")
-    // );
-    // println!(
-    //     "Parsing literal bin expression: {:#?}",
-    //     c::ExpressionParser::new().parse("0b1111")
-    // );
-    // println!(
-    //     "Parsing statement: {:#?}",
-    //     c::StatementParser::new().parse("return 1;")
-    // );
-    // println!(
-    //     "Parsing identifier: {:#?}",
-    //     c::IdentifierParser::new().parse("Bad_apples123abc")
-    // );
-    // println!(
-    //     "Parsing function: {:#?}",
-    //     c::ProgramParser::new().parse("void foo() {} int main() { main(1,2,3,4); }")
-    // );
-
-    // let parsed = c::ProgramParser::new().parse(
-    //     "
-    //         int fib(int n) {
-    //             if (n == 0 || n == 1) {
-    //                 print(1);
-    //                 return n;
-    //             } else {
-    //                 return fib(n - 1) + fib(n - 2);
-    //             }
-    //         }
-
-    //         int main() {
-    //             int n = 10;
-    //             return fib(n);
-    //         }
-    // ",
-    // );
-
-    // println!("Parsing function: {:#?}", &parsed);
-
-    // if let Ok(result) = &parsed {
-    //     result;
-    // }
-
-    // let args: Vec<String> = env::args().collect();
-    // dbg!(args);
-
     let filepath = "/home/wojciech/projects/studia/metody-i-algorytmy-kompilacji/projekt/parser_project/output/example.c";
     let contents = fs::read_to_string(filepath);
     if let Ok(code) = contents {
         let parsed = c::ProgramParser::new().parse(&code);
-        if let Ok(parsed) = &parsed {
-            println!("Parsed: {:#?}", &parsed);
-            let asm: String = parsed.compile();
-            println!("Generated asm: \n{}", asm);
-            let mut file = File::create("/home/wojciech/projects/studia/metody-i-algorytmy-kompilacji/projekt/parser_project/output/output.s");
-            match file {
-                Ok(mut file) => {
-                    let result = file.write_all(asm.as_bytes());
-                    match result {
-                        Ok(ok) => {}
-                        Err(err) => println!("Failed to save to file, because: {}", err),
+        match parsed {
+            Ok(parsed) => {
+                println!("Parsed: {:#?}", &parsed);
+                let asm: String = parsed.compile();
+                println!("Generated asm: \n{}", asm);
+                let mut file = File::create("/home/wojciech/projects/studia/metody-i-algorytmy-kompilacji/projekt/parser_project/output/output.s");
+                match file {
+                    Ok(mut file) => {
+                        let result = file.write_all(asm.as_bytes());
+                        match result {
+                            Ok(ok) => {}
+                            Err(err) => println!("Failed to save to file, because: {}", err),
+                        }
+                    }
+                    Err(error) => {
+                        println!("Failed to open file, because: {}", error)
                     }
                 }
-                Err(error) => {
-                    println!("Failed to open file, because: {}", error)
+            }
+            Err(err) => {
+                println!("Failed to parse file {}", filepath);
+                match err {
+                    lalrpop_util::ParseError::InvalidToken { location } => todo!(),
+                    lalrpop_util::ParseError::UnrecognizedEof { location, expected } => todo!(),
+                    lalrpop_util::ParseError::UnrecognizedToken { token, expected } => {
+                        let (begin, token, len) = token;
+                        println!("Parse error: UnrecognizedToken '{}'", token);
+                        print_souce_location(&code, begin);
+                        println!("Exprected one of:");
+                        for e in &expected {
+                            print!("- {}", e);
+                        }
+                        println!("");
+                    },
+                    lalrpop_util::ParseError::ExtraToken { token } => todo!(),
+                    lalrpop_util::ParseError::User { error } => todo!(),
                 }
             }
-        } else {
-            println!("Failed to parse file {}", filepath);
         }
     } else {
         println!("Failed to open {}", filepath);

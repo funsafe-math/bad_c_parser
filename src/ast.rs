@@ -6,7 +6,29 @@ pub struct Program {
 #[derive(Debug, Clone)]
 pub enum TopLevelItem {
     Function(FunctionDefinition),
+    FunctionDeclaration(FunctionDeclaration),
     VariableDeclaration(VariableDeclaration),
+}
+
+#[derive(Debug, Clone)]
+pub struct FunctionDeclaration {
+    pub return_type: TypeSpecifier,
+    pub identifier: Identifier,
+    pub arguments: Vec<Parameter>,
+}
+
+impl FunctionDeclaration {
+    pub fn new(
+        return_type: TypeSpecifier,
+        identifier: Identifier,
+        arguments: Vec<Parameter>,
+    ) -> Self {
+        Self {
+            return_type,
+            identifier,
+            arguments,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -49,6 +71,14 @@ impl FunctionDefinition {
                 }
                 ret
             }
+        }
+    }
+
+    pub fn into_declaration(&self) -> FunctionDeclaration {
+        FunctionDeclaration {
+            return_type: self.return_type.clone(),
+            identifier: self.identifier.clone(),
+            arguments: self.arguments.clone(),
         }
     }
 }

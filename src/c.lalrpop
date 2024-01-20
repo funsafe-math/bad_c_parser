@@ -17,6 +17,7 @@ CommaList<T> : Vec<T> = {
 
 pub TopLevelItem: TopLevelItem = {
     <FunctionDefinition> => TopLevelItem::Function(<>),
+    <FunctionDeclaration> => TopLevelItem::FunctionDeclaration(<>),
     <VariableDeclaration> => TopLevelItem::VariableDeclaration(<>),
 }
 
@@ -27,6 +28,10 @@ pub Program: Program = {
 pub FunctionDefinition: FunctionDefinition = {
     <t:TypeSpecifier> <i:Identifier> "(" <p:ParameterList> ")" <c:CompoundStatement> => FunctionDefinition::new(<>),
     <t:TypeSpecifier> <i:Identifier> "(" ")" <c:CompoundStatement> => FunctionDefinition::new(t, i, vec![], c),
+}
+
+pub FunctionDeclaration: FunctionDeclaration = {
+    <t:TypeSpecifier> <i:Identifier> "(" <p:ParameterList> ")" ";" => FunctionDeclaration::new(<>),
 }
 
 pub Identifier: Identifier = <s:r"[a-zA-Z_][0-9a-zA-Z_]*"> => Identifier{name: s.to_string()};

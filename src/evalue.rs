@@ -4,7 +4,7 @@ use crate::ast::*;
 
 #[derive(Debug, Default)]
 struct Context {
-    functions: HashMap<String, FunctionDefinition>,
+    functions: HashMap<String, FunctionDeclaration>,
     asm: Vec<String>,
     stack: Vec<StackFrme>,
 }
@@ -283,17 +283,15 @@ impl Compile for BlockItem {
 impl Compile for FunctionDefinition {
     fn compile(&self, ctx: &mut Context) {
         ctx.functions
-            .insert(self.identifier.name.clone(), self.clone());
+            .insert(self.identifier.name.clone(), self.into_declaration());
         ctx.asm.push(format!("global {}", self.identifier.name));
         ctx.asm.push(format!("{}:", self.identifier.name));
 
         let first_function_instruction_ix = ctx.asm.len();
 
-
         let mut required_stack = self.required_stack();
         // Setup new stack frame
         let mut frame = StackFrme::default();
-
 
         ctx.stack.push(frame);
 
@@ -302,7 +300,10 @@ impl Compile for FunctionDefinition {
         for (i, arg) in self.arguments.iter().enumerate() {
             ctx.top_frame().add_variable(&arg.identifier.name);
             required_stack += arg.type_specifier.size();
-            ctx.asm.push(format!("mov rax, {}  ; copy argument {} onto stack", calling_convention[i], &arg.identifier.name));
+            ctx.asm.push(format!(
+                "mov rax, {}  ; copy argument {} onto stack",
+                calling_convention[i], &arg.identifier.name
+            ));
             ctx.save_variable(&arg.identifier.name);
         }
         ctx.top_frame().size_on_stack = required_stack;
@@ -357,6 +358,12 @@ impl Program {
                 }
                 TopLevelItem::VariableDeclaration(variable) => {
                     todo!()
+                }
+                TopLevelItem::FunctionDeclaration(function_declaration) => {
+                    ctx.functions.insert(
+                        function_declaration.identifier.name.clone(),
+                        function_declaration.clone(),
+                    );
                 }
             }
         }
