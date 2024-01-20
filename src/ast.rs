@@ -1,21 +1,22 @@
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Program {
     pub top_level_items: Vec<TopLevelItem>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum TopLevelItem {
     Function(FunctionDefinition),
     VariableDeclaration(VariableDeclaration),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FunctionDefinition {
     pub return_type: TypeSpecifier,
     pub identifier: Identifier,
     pub arguments: Vec<Parameter>,
     pub statement: CompoundStatement,
 }
+
 impl FunctionDefinition {
     pub fn new(
         return_type: TypeSpecifier,
@@ -30,9 +31,29 @@ impl FunctionDefinition {
             statement,
         }
     }
+    // How much stack space needs to be allocated
+    pub fn required_stack(&self) -> usize {
+        match &self.statement {
+            CompoundStatement::Empty => 0,
+            CompoundStatement::StatementList(list) => {
+                let mut ret = 0;
+                for block_item in list {
+                    match block_item {
+                        BlockItem::Statement(_) => {
+                            // TODO: implement
+                        }
+                        BlockItem::Declaration(decl) => {
+                            ret += decl.type_specifier.size();
+                        }
+                    }
+                }
+                ret
+            }
+        }
+    }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Parameter {
     pub type_specifier: TypeSpecifier,
     pub identifier: Identifier,
@@ -47,25 +68,25 @@ impl Parameter {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum BlockItem {
     Statement(Statement),
     Declaration(VariableDeclaration),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Declaration {
     VariableDeclaration(TypeSpecifier, Identifier),
     VariableDeclarationAssignment(TypeSpecifier, Identifier, Box<Expression>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum If {
     SingleBranch(Box<Expression>, Box<Statement>), // if (expr) {statement}
     TwoBranch(Box<Expression>, Box<Statement>, Box<Statement>), // if (expr) {statement0} else {statement1}
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Statement {
     ReturnExpression(Box<Expression>),
     Expression(Box<Expression>),
@@ -91,13 +112,13 @@ pub enum Statement {
     Empty,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum CompoundStatement {
     Empty,
     StatementList(Vec<BlockItem>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Expression {
     LiteralNum(i64),
     UnaryOp(UnaryOp, Box<Expression>),
@@ -110,7 +131,7 @@ pub enum Expression {
 }
 
 // Precedence: https://en.cppreference.com/w/c/language/operator_precedence
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum BinaryOperator {
     Multiply,
     Divide,
@@ -127,7 +148,7 @@ pub enum BinaryOperator {
     Leq,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum TypeSpecifier {
     Char,
     Short,
@@ -140,12 +161,28 @@ pub enum TypeSpecifier {
     Void,
 }
 
-#[derive(Debug)]
+impl TypeSpecifier {
+    pub fn size(&self) -> usize {
+        match self {
+            TypeSpecifier::Char => todo!(),
+            TypeSpecifier::Short => todo!(),
+            TypeSpecifier::Int => 4,
+            TypeSpecifier::Long => 8,
+            TypeSpecifier::Signed => todo!(),
+            TypeSpecifier::Unsigned => todo!(),
+            TypeSpecifier::Float => todo!(),
+            TypeSpecifier::Double => todo!(),
+            TypeSpecifier::Void => todo!(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct Identifier {
     pub name: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct VariableDeclaration {
     pub type_specifier: TypeSpecifier,
     pub identifier: Identifier,
@@ -166,7 +203,7 @@ impl VariableDeclaration {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum UnaryOp {
     Minus,
     BitwiseNegation,

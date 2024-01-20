@@ -4,7 +4,7 @@ use crate::ast::*;
 
 #[derive(Debug, Default)]
 struct Context {
-    functions: HashMap<String, Vec<String>>,
+    functions: HashMap<String, FunctionDefinition>,
     asm: Vec<String>,
     stack: Vec<StackFrme>,
 }
@@ -16,14 +16,18 @@ impl Context {
 
     pub fn generate_epilogue(&mut self) {
         // TODO: remove variables from stack?
-        self.asm.push(format!("pop rbp  ; Epilogue"));
+
+        // self.asm.push(format!("mov rsp,rbp  ; Epilogue"));
+        // self.asm.push(format!("pop rbp  ; Epilogue"));
+        let size_on_stack = self.top_frame().size_on_stack;
+        self.asm.push(format!("add rsp, {}", size_on_stack));
     }
 
     // Load variable at name to rax
     pub fn load_variable(&mut self, name: &str) {
         if let Some(ix) = self.top_frame().get_variable_ix(name) {
             self.asm
-                .push(format!("mov rax, [rbp-{}] ; Loading {}", ix, name));
+                .push(format!("mov rax, [rsp+{}] ; Loading {}", ix + 8, name));
         } else {
             println!("Use of undeclared variable {}, will load 0", name);
             self.asm.push(format!("mov rax, 0"));
@@ -34,7 +38,7 @@ impl Context {
     pub fn save_variable(&mut self, name: &str) {
         if let Some(ix) = self.top_frame().get_variable_ix(name) {
             self.asm
-                .push(format!("mov [rbp-{}], rax ; saving {}", ix, name));
+                .push(format!("mov [rsp+{}], rax ; saving {}", ix + 8, name));
         } else {
             println!("Use of undeclared variable {}, cannot save 0", name);
             // self.asm.push(format!("movq $0, %rax"));
@@ -42,10 +46,15 @@ impl Context {
     }
 }
 
+pub fn calling_convention() -> [&'static str; 6] {
+    ["rdi", "rsi", "rdx", "rcx", "r8", "r9"]
+}
+
 #[derive(Debug, Default)]
 struct StackFrme {
     pub variables: HashMap<String, usize>,
     biggest_ix: usize,
+    pub size_on_stack: usize,
 }
 
 impl StackFrme {
@@ -182,7 +191,52 @@ impl Compile for Expression {
                 op.compile(ctx);
                 ctx.save_variable(name);
             }
-            Expression::FunctionCall(_, _) => todo!(),
+            Expression::FunctionCall(id, got_arguments) => {
+                if let Some(func) = &ctx.functions.get(&id.name) {
+                    let expected_args = &func.arguments.clone();
+                    if expected_args.len() > 6 {
+                        println!("Currently, more than 6 function parameters is not supported");
+                    } else if got_arguments.len() != expected_args.len() {
+                        println!(
+                            "{} Called with invalid number of arguments, expected {}, got {}",
+                            &id.name,
+                            expected_args.len(),
+                            got_arguments.len()
+                        );
+                    } else {
+                        let calling_convention = &["rdi", "rsi", "rdx", "rcx", "r8", "r9"];
+                        // for (i,arg) in got_arguments.iter().enumerate().rev(){
+                        //     arg.compile(ctx);
+                        //     ctx.asm.push(format!("push rax  ; prepare argument {} of {}", &expected_args[i].identifier.name, id.name));
+                        // }
+                        let n_dirty_registers = got_arguments.len();
+                        for reg in calling_convention.iter().take(n_dirty_registers) {
+                            ctx.asm
+                                .push(format!("push {}  ; will be param, lets save it", reg))
+                        }
+
+                        for (i, (arg, reg)) in
+                            got_arguments.iter().zip(calling_convention).enumerate()
+                        {
+                            arg.compile(ctx);
+                            ctx.asm.push(format!(
+                                "mov {}, rax  ; prepare argument {} of {}",
+                                reg, &expected_args[i].identifier.name, id.name
+                            ));
+                        }
+                        ctx.asm.push(format!("call {}", id.name));
+
+                        let n_dirty_registers = got_arguments.len();
+                        for reg in calling_convention.iter().take(n_dirty_registers).rev() {
+                            ctx.asm.push(format!("pop {}  ; restore saved", reg))
+                        }
+                        // ctx.asm.push(format!("add esp, 8"));
+                        // ctx.asm.push(format!("mov  esp, ebp"));
+                    }
+                } else {
+                    println!("Function named {} unknown", &id.name);
+                }
+            }
         }
     }
 }
@@ -228,14 +282,40 @@ impl Compile for BlockItem {
 
 impl Compile for FunctionDefinition {
     fn compile(&self, ctx: &mut Context) {
+        ctx.functions
+            .insert(self.identifier.name.clone(), self.clone());
         ctx.asm.push(format!("global {}", self.identifier.name));
         ctx.asm.push(format!("{}:", self.identifier.name));
 
+        let first_function_instruction_ix = ctx.asm.len();
+
+
+        let mut required_stack = self.required_stack();
         // Setup new stack frame
-        ctx.stack.push(StackFrme::default());
-        ctx.asm.push(format!("push rbp; Setup new stack frame"));
-        ctx.asm
-            .push(format!("mov rbp, rsp ; Setup new stack frame"));
+        let mut frame = StackFrme::default();
+
+
+        ctx.stack.push(frame);
+
+        // Copy arguments onto the stack TODO: fix
+        let calling_convention = calling_convention();
+        for (i, arg) in self.arguments.iter().enumerate() {
+            ctx.top_frame().add_variable(&arg.identifier.name);
+            required_stack += arg.type_specifier.size();
+            ctx.asm.push(format!("mov rax, {}  ; copy argument {} onto stack", calling_convention[i], &arg.identifier.name));
+            ctx.save_variable(&arg.identifier.name);
+        }
+        ctx.top_frame().size_on_stack = required_stack;
+
+        // Allocate space for stack variables
+        ctx.asm.push(format!(
+            "sub rsp, {}  ; setup stack space for local variables",
+            required_stack
+        ));
+
+        // ctx.asm.push(format!("push rbp; Setup new stack frame"));
+        // ctx.asm
+        //     .push(format!("mov rbp, rsp ; Setup new stack frame"));
 
         // Put values into args
         match &self.statement {
@@ -246,11 +326,22 @@ impl Compile for FunctionDefinition {
                 }
             }
         }
+
         assert!(ctx.stack.len() > 0);
 
         ctx.stack.pop();
+        ctx.asm.push(format!("; just to be sure we return"));
 
-        ctx.asm.push(format!("ret  ; just to be sure we return"));
+        ctx.asm.push(format!(
+            "add rsp, {}  ; deallocate stack space for local variables",
+            required_stack
+        ));
+        ctx.asm.push(format!("ret "));
+
+        // Indent fuction code
+        for instr in ctx.asm.iter_mut().skip(first_function_instruction_ix) {
+            *instr = format!("    {}", &instr);
+        }
     }
 }
 
@@ -269,21 +360,21 @@ impl Program {
                 }
             }
         }
-        ctx.asm.push(r#"
-print_rax:
-; Call printf.
-    mov esi, eax
-    ; mov   esi, 0x12345678 
-    lea   rdi, [rel format]
-    xor   eax, eax
-    call  printf
-    ret
+        //         ctx.asm.push(r#"
+        // print_rax:
+        // ; Call printf.
+        //     mov esi, eax
+        //     ; mov   esi, 0x12345678
+        //     lea   rdi, [rel format]
+        //     xor   eax, eax
+        //     call  printf
+        //     ret
 
-section .rodata
-    format db "%d", 10, 0
+        // section .rodata
+        //     format db "%d", 10, 0
 
-extern printf
-"#.to_string());
+        // extern printf
+        // "#.to_string());
 
         ctx.asm.iter().map(|x| format!("{}\n", x)).collect()
     }
