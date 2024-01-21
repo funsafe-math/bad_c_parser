@@ -15,6 +15,7 @@ pub struct FunctionDeclaration {
     pub return_type: TypeSpecifier,
     pub identifier: Identifier,
     pub arguments: Vec<Parameter>,
+    pub variadic: bool,
 }
 
 impl FunctionDeclaration {
@@ -22,11 +23,13 @@ impl FunctionDeclaration {
         return_type: TypeSpecifier,
         identifier: Identifier,
         arguments: Vec<Parameter>,
+        variadic: bool,
     ) -> Self {
         Self {
             return_type,
             identifier,
             arguments,
+            variadic,
         }
     }
 }
@@ -79,6 +82,7 @@ impl FunctionDefinition {
             return_type: self.return_type.clone(),
             identifier: self.identifier.clone(),
             arguments: self.arguments.clone(),
+            variadic: false,
         }
     }
 }

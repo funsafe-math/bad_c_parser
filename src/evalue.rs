@@ -9,7 +9,6 @@ struct Context {
     stack: Vec<StackFrme>,
     strings: Vec<(String, String)>,
     last_string_ix: usize,
-
 }
 
 impl Context {
@@ -34,8 +33,11 @@ impl Context {
     pub fn load_variable(&mut self, name: &str) {
         let offset = self.top_frame().pushed_on_stack_since_begin;
         if let Some(ix) = self.top_frame().get_variable_ix(name) {
-            self.asm
-                .push(format!("mov rax, [rsp+{}]  ; Load {}", ix + 8 + offset, name));
+            self.asm.push(format!(
+                "mov rax, [rsp+{}]  ; Load {}",
+                ix + 8 + offset,
+                name
+            ));
         } else {
             println!("Use of undeclared variable {}, will load 0", name);
             self.asm.push(format!("mov rax, 0"));
@@ -46,20 +48,23 @@ impl Context {
     pub fn save_variable(&mut self, name: &str) {
         let offset = self.top_frame().pushed_on_stack_since_begin;
         if let Some(ix) = self.top_frame().get_variable_ix(name) {
-            self.asm
-                .push(format!("mov [rsp+{}], rax  ; Save {}", ix + 8 + offset, name ));
+            self.asm.push(format!(
+                "mov [rsp+{}], rax  ; Save {}",
+                ix + 8 + offset,
+                name
+            ));
         } else {
             println!("Use of undeclared variable {}, cannot save", name);
             // self.asm.push(format!("movq $0, %rax"));
         }
     }
 
-    pub fn emit_push(&mut self, register: &str, comment: &str){
+    pub fn emit_push(&mut self, register: &str, comment: &str) {
         self.asm.push(format!("push {}  ; {}", register, comment));
         self.top_frame().pushed_on_stack_since_begin += 8;
     }
 
-    pub fn emit_pop(&mut self, register: &str, comment: &str){
+    pub fn emit_pop(&mut self, register: &str, comment: &str) {
         self.asm.push(format!("pop {}  ; {}", register, comment));
         assert!(self.top_frame().pushed_on_stack_since_begin >= 8);
         self.top_frame().pushed_on_stack_since_begin -= 8;
@@ -75,10 +80,10 @@ impl Context {
     pub fn bytes_to_stack_alignment(&self) -> usize {
         // Stack needs to be 16 bytes aligned
         let top_frame = self.top_frame_const();
-        let current_alignment = top_frame.size_on_stack & 0xf + top_frame.pushed_on_stack_since_begin &0xf;
-        8 - current_alignment
+        let current_size_on_stack = top_frame.size_on_stack + top_frame.pushed_on_stack_since_begin;
+        let alignment = current_size_on_stack & 0xf;
+        8 - alignment
     }
-
 }
 
 pub fn calling_convention() -> [&'static str; 6] {
@@ -159,12 +164,13 @@ impl Compile for BinaryOperator {
                 ctx.asm.push(format!("sub rax, rbx"));
             }
             BinaryOperator::LogicAnd => todo!(),
-            BinaryOperator::LogicOr => { // HACK: Not compilant with the standard, both values will be evaluated
+            BinaryOperator::LogicOr => {
+                // HACK: Not compilant with the standard, both values will be evaluated
                 ctx.asm.push(format!("add rax, rbx"));
                 ctx.asm.push(format!("cmp rax, 0"));
                 ctx.asm.push(format!("mov rax, 0"));
                 ctx.asm.push(format!("setne al"));
-            },
+            }
             BinaryOperator::LogicEq => {
                 ctx.asm.push(format!("cmp rax, rbx"));
                 ctx.asm.push(format!("mov rax, 0"));
@@ -243,9 +249,10 @@ impl Compile for Expression {
             Expression::FunctionCall(id, got_arguments) => {
                 if let Some(func) = &ctx.functions.get(&id.name) {
                     let expected_args = &func.arguments.clone();
-                    if expected_args.len() > 6 {
+                    let variadic = func.variadic;
+                    if got_arguments.len() > 6 {
                         println!("Currently, more than 6 function parameters is not supported");
-                    } else if got_arguments.len() != expected_args.len() {
+                    } else if !func.variadic && got_arguments.len() != expected_args.len() {
                         println!(
                             "{} Called with invalid number of arguments, expected {}, got {}",
                             &id.name,
@@ -269,21 +276,30 @@ impl Compile for Expression {
                             got_arguments.iter().zip(calling_convention).enumerate()
                         {
                             arg.compile(ctx);
-                            ctx.asm.push(format!(
-                                "mov {}, rax  ; prepare argument {} of {}",
-                                reg, &expected_args[i].identifier.name, id.name
-                            ));
+                            let variable_name = match i < expected_args.len() {
+                                true => format!("{}", &expected_args[i].identifier.name),
+                                false => format!("varidic-{}", i),
+                            };
+                            let comment =
+                                format!("prepare argument {} of {}", variable_name, id.name);
+                            ctx.asm.push(format!("mov {}, rax  ; {}", reg, comment));
                         }
 
                         let bytes_to_alignment = ctx.bytes_to_stack_alignment();
                         if bytes_to_alignment != 0 {
-                            ctx.asm.push(format!("sub rsp, {}  ; Align the stack for function call", bytes_to_alignment));
+                            ctx.asm.push(format!(
+                                "sub rsp, {}  ; Align the stack for function call",
+                                bytes_to_alignment
+                            ));
                         }
 
                         ctx.asm.push(format!("call {}", id.name));
 
                         if bytes_to_alignment != 0 {
-                            ctx.asm.push(format!("add rsp, {}  ; Restore stack after function call", bytes_to_alignment));
+                            ctx.asm.push(format!(
+                                "add rsp, {}  ; Restore stack after function call",
+                                bytes_to_alignment
+                            ));
                         }
 
                         let n_dirty_registers = got_arguments.len();
@@ -301,7 +317,7 @@ impl Compile for Expression {
                 let label = ctx.create_string(&s);
                 ctx.asm.push(format!("lea rax, [rel {}]", &label));
                 // ctx.asm.push(format!("mov rax, rdi"));
-            },
+            }
         }
     }
 }
@@ -436,7 +452,6 @@ impl Compile for FunctionDefinition {
             ));
             ctx.save_variable(&arg.identifier.name);
         }
-
 
         // ctx.asm.push(format!("push rbp; Setup new stack frame"));
         // ctx.asm
