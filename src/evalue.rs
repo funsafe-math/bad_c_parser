@@ -31,38 +31,36 @@ impl Context {
     }
 
     // Load variable at name to rax
-    pub fn load_variable(&mut self, name: &str) {
+    pub fn load_variable(&mut self, name: &str) -> Result<Variable, String> {
         let offset = self.top_frame().pushed_on_stack_since_begin;
-        if let Ok(variable) = self.top_frame().get_variable(name) {
-            let ix = variable.position_on_stack;
-            let size = variable.type_specifier.size();
-            self.asm.push(format!(
-                "mov rax, [rsp+{}]  ; Load {}",
-                ix + size + offset,
-                name
-            ));
-        } else {
-            println!("Use of undeclared variable {}, will load 0", name);
-            self.asm.push(format!("mov rax, 0"));
-        }
+        let variable = self.top_frame_const().get_variable(name)?;
+
+        let ix = variable.position_on_stack;
+        let size = variable.type_specifier.size();
+        self.asm.push(format!(
+            "mov rax, [rsp+{}]  ; Load {}",
+            ix + size + offset,
+            name
+        ));
+        Ok(variable)
     }
 
-    pub fn load_variable_ptr(&mut self, name: &str) {
+    pub fn load_ptr_to_variable(&mut self, name: &str) -> Result<Variable, String> {
         let offset = self.top_frame().pushed_on_stack_since_begin;
-        if let Ok(variable) = self.top_frame().get_variable(name) {
-            let ix = variable.position_on_stack;
-            let size = variable.type_specifier.size();
-            self.asm.push(format!("mov rax, rsp  ; Load {} ptr", name));
-            self.asm.push(format!(
-                "add rax, {}  ; Load {} ptr",
-                ix + size + offset,
-                name
-            ));
-        } else {
-            println!("Use of undeclared variable {}, will load 0", name);
-            self.asm.push(format!("mov rax, 0"));
-        }
+        let variable = self.top_frame().get_variable(name)?;
+        let ix = variable.position_on_stack;
+        let size = variable.type_specifier.size();
+        self.asm.push(format!("mov rax, rsp  ; Load {} ptr", name));
+        self.asm.push(format!(
+            "add rax, {}  ; Load {} ptr",
+            ix + size + offset,
+            name
+        ));
+
+        Ok(variable.to_pointer())
     }
+
+    // pub fn load_ptr
 
     // Save rax value to location of variable name
     pub fn save_variable(&mut self, name: &str) {
@@ -107,7 +105,10 @@ impl Context {
         8 - alignment
     }
 
-    pub fn get_variable_from_identifier(&self, identifier: &Identifier) -> Result<Variable, String>{
+    pub fn get_variable_from_identifier(
+        &self,
+        identifier: &Identifier,
+    ) -> Result<Variable, String> {
         self.top_frame_const().get_variable(&identifier.name)
     }
 }
@@ -127,6 +128,29 @@ impl Variable {
         Self {
             type_specifier,
             position_on_stack,
+        }
+    }
+
+    fn to_pointer(&self) -> Self {
+        Self {
+            type_specifier: TypeSpecifier::Pointer(Box::new(self.type_specifier.clone())),
+            position_on_stack: self.position_on_stack,
+        }
+    }
+
+    fn is_pointer(&self) -> bool {
+        match self.type_specifier {
+            TypeSpecifier::Pointer(_) => true,
+            TypeSpecifier::Array(_, _) => true,
+            _ => false,
+        }
+    }
+
+    fn dereference_type(&self) -> Result<TypeSpecifier, String> {
+        match &self.type_specifier {
+            TypeSpecifier::Pointer(t) => Ok(*t.clone()),
+            TypeSpecifier::Array(t, _) => Ok(*t.clone()),
+            _ => Err("Type is not deferencable".to_string()),
         }
     }
 }
@@ -223,8 +247,15 @@ impl Expression {
             Expression::UnaryOp(op, expr) => expr.get_type(ctx),
             Expression::Op(lhs, _, rhs) => lhs.get_type(ctx)? + rhs.get_type(ctx)?,
             Expression::Variable(identifier) => get_id_type(identifier),
-            Expression::Conditional(_, _, _) => todo!(),
-            Expression::Assignment(i, expr) => get_id_type(i),
+            Expression::Conditional(_, expr_a, expr_b) => {
+                let common_type = expr_a.get_type(ctx)? + expr_b.get_type(ctx)?;
+                common_type
+            }
+            Expression::Assignment(lvalue, expr) => match lvalue {
+                LValue::Identifier(i) => get_id_type(i),
+                LValue::PointerDereference(_, _) => todo!(),
+                LValue::PointerDereferenceConstant(_, _) => todo!(),
+            },
             Expression::CompoundAssignment(_, _, _) => todo!(),
             Expression::FunctionCall(_, _) => todo!(),
             Expression::IndexOperator(identifier, _) => {
@@ -232,11 +263,15 @@ impl Expression {
                 match t {
                     TypeSpecifier::Pointer(underlying) => Ok(*underlying),
                     TypeSpecifier::Array(underlying, _) => Ok(*underlying),
-                    _ => Err(format!("Variable {} is not a pointer nor array", identifier.name))
+                    _ => Err(format!(
+                        "Variable {} is not a pointer nor array",
+                        identifier.name
+                    )),
                 }
-
-            },
-            Expression::Ampersand(identifier) => Ok(TypeSpecifier::Pointer(Box::new(get_id_type(identifier)?))),
+            }
+            Expression::Ampersand(identifier) => {
+                Ok(TypeSpecifier::Pointer(Box::new(get_id_type(identifier)?)))
+            }
             Expression::PostPlusPlus(i) => get_id_type(i),
             Expression::PostMinusMinus(i) => get_id_type(i),
             Expression::PrePlusPlus(i) => get_id_type(i),
@@ -248,8 +283,18 @@ impl Expression {
 impl Add for TypeSpecifier {
     type Output = Result<TypeSpecifier, String>;
 
-    fn add(self, rhs: Self) -> Self::Output {
-        todo!()
+    fn add(self, rhs: TypeSpecifier) -> Self::Output {
+        if self == rhs {
+            Ok(self.clone())
+        } else {
+            Err("Not convertable".to_string())
+        }
+    }
+}
+
+impl TypeSpecifier {
+    fn convertable_to(&self, other: &Self) -> bool {
+        (self.clone() + other.clone()).is_ok()
     }
 }
 
@@ -364,9 +409,70 @@ impl Compile for Expression {
                 ctx.asm.push(format!("{}:", &post_conditional));
             }
             Expression::Assignment(id, expr) => {
-                expr.compile(ctx);
-                let name = &id.name;
-                ctx.save_variable(name);
+                match id {
+                    LValue::Identifier(identifier) => {
+                        let lhs = ctx.get_variable_from_identifier(identifier).unwrap(); // TODO: replace unwrap with ? operator
+                        let rhs_type = expr.get_type(ctx).unwrap();
+                        assert!(
+                            rhs_type.convertable_to(&lhs.type_specifier),
+                            "rhs must be convertable to lhs"
+                        );
+                        let name = &identifier.name;
+                        expr.compile(ctx);
+                        ctx.save_variable(name);
+                    }
+                    LValue::PointerDereference(identifier, index_expr) => {
+                        let lhs = ctx.get_variable_from_identifier(identifier).unwrap();
+                        assert!(lhs.is_pointer());
+                        let loaded_type = ctx.load_variable(&identifier.name).unwrap(); // LOAD
+                        ctx.emit_push("rax", "");
+
+                        let dereference_type = loaded_type.dereference_type().unwrap();
+                        let register = match dereference_type.size() {
+                            1 => "al",
+                            2 => "ax",
+                            4 => "eax",
+                            8 => "rax",
+                            _ => panic!(),
+                        };
+
+                        index_expr.compile(ctx);
+                        ctx.emit_pop("rbx", "");
+                        ctx.asm.push(format!(
+                            "lea rax, [rbx + rax * {}]",
+                            dereference_type.size()
+                        ));
+                        ctx.emit_push("rax", "");
+
+                        expr.compile(ctx);
+                        ctx.emit_pop("rbx", "");
+                        ctx.asm.push(format!("mov [rbx], {}", register));
+                    }
+                    LValue::PointerDereferenceConstant(identifier, ix) => {
+                        let lhs = ctx.get_variable_from_identifier(identifier).unwrap();
+                        assert!(lhs.is_pointer());
+                        let loaded_type = ctx.load_variable(&identifier.name).unwrap(); // LOAD
+
+                        let dereference_type = loaded_type.dereference_type().unwrap();
+                        if *ix != 0 {
+                            ctx.asm
+                                .push(format!("add rax, {}", dereference_type.size() * ix));
+                        }
+                        ctx.emit_push("rax", "");
+
+                        let register = match dereference_type.size() {
+                            1 => "al",
+                            2 => "ax",
+                            4 => "eax",
+                            8 => "rax",
+                            _ => panic!(),
+                        };
+
+                        expr.compile(ctx);
+                        ctx.emit_pop("rbx", "");
+                        ctx.asm.push(format!("mov [rbx], {}", register));
+                    }
+                }
             }
             Expression::CompoundAssignment(id, op, expr) => {
                 expr.compile(ctx);
@@ -391,14 +497,8 @@ impl Compile for Expression {
                         );
                     } else {
                         let calling_convention = calling_convention();
-                        // for (i,arg) in got_arguments.iter().enumerate().rev(){
-                        //     arg.compile(ctx);
-                        //     ctx.asm.push(format!("push rax  ; prepare argument {} of {}", &expected_args[i].identifier.name, id.name));
-                        // }
                         let n_dirty_registers = got_arguments.len();
                         for reg in calling_convention.iter().take(n_dirty_registers) {
-                            // ctx.asm
-                            //     .push(format!("push {}  ; will be param, lets save it", reg))
                             ctx.emit_push(reg, "will be param, lets save it");
                         }
 
@@ -452,13 +552,14 @@ impl Compile for Expression {
                 //TODO: identifier must be ptr
                 let resulting_type = self.get_type(ctx).unwrap(); // TODO: make it '?'
                 expr.compile(ctx);
-                ctx.asm.push(format!("lea rdx, [rax*{}]", resulting_type.size()));
+                ctx.asm
+                    .push(format!("lea rdx, [rax*{}]", resulting_type.size()));
                 ctx.load_variable(&identifier.name);
                 ctx.asm.push(format!("add rax, rdx"));
                 ctx.asm.push(format!("mov rax, [rax]"));
             }
             Expression::Ampersand(identifier) => {
-                ctx.load_variable_ptr(&identifier.name);
+                ctx.load_ptr_to_variable(&identifier.name);
             }
             Expression::PostPlusPlus(identifier) => {
                 ctx.load_variable(&identifier.name);
@@ -506,7 +607,6 @@ impl Compile for Statement {
             Statement::Expression(expression) => {
                 expression.compile(ctx);
             }
-            Statement::Assignment(_, _) => todo!(),
             Statement::If(if_statement) => match if_statement {
                 If::SingleBranch(expr, statement) => {
                     expr.compile(ctx);

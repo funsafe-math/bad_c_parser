@@ -133,7 +133,6 @@ pub enum If {
 pub enum Statement {
     ReturnExpression(Box<Expression>),
     Expression(Box<Expression>),
-    Assignment(Identifier, Box<Expression>),
     If(If),
     CompoundStatement(CompoundStatement),
     For(
@@ -155,12 +154,18 @@ pub enum Statement {
     Empty,
 }
 
+#[derive(Debug, Clone)]
+pub enum LValue {
+    Identifier(Identifier),
+    PointerDereference(Identifier, Box<Expression>), // Also used for arrayElement
+    PointerDereferenceConstant(Identifier, usize),
+}
+
 impl Statement {
     fn required_stack(&self) -> usize {
         match self {
             Statement::ReturnExpression(_) => 0,
             Statement::Expression(_) => 0,
-            Statement::Assignment(_, _) => 0,
             Statement::If(if_statement) => match if_statement {
                 If::SingleBranch(_, statement) => statement.required_stack(),
                 If::TwoBranch(_, st_a, st_b) => st_a.required_stack() + st_b.required_stack(),
@@ -202,7 +207,7 @@ pub enum Expression {
     Op(Box<Expression>, BinaryOperator, Box<Expression>),
     Variable(Identifier),
     Conditional(Box<Expression>, Box<Expression>, Box<Expression>),
-    Assignment(Identifier, Box<Expression>),
+    Assignment(LValue, Box<Expression>),
     CompoundAssignment(Identifier, BinaryOperator, Box<Expression>),
     FunctionCall(Identifier, Vec<Box<Expression>>), // name+arguments
     IndexOperator(Identifier, Box<Expression>), // name + index expr
@@ -231,7 +236,7 @@ pub enum BinaryOperator {
     Leq,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum TypeSpecifier {
     Char,
     Short,
@@ -248,13 +253,15 @@ pub enum TypeSpecifier {
 
 impl TypeSpecifier {
     pub fn size(&self) -> usize {
+        // Technically compliant with standard: https://en.cppreference.com/w/c/language/arithmetic_types
+        // "At least 8 bytes"
         match self {
             TypeSpecifier::Char => 1,
-            TypeSpecifier::Short => todo!(),
+            TypeSpecifier::Short => 8,
             TypeSpecifier::Int => 8, // TODO: fix this
             TypeSpecifier::Long => 8,
-            TypeSpecifier::Signed => todo!(),
-            TypeSpecifier::Unsigned => todo!(),
+            TypeSpecifier::Signed => 8,
+            TypeSpecifier::Unsigned => 8,
             TypeSpecifier::Float => todo!(),
             TypeSpecifier::Double => todo!(),
             TypeSpecifier::Void => todo!(),

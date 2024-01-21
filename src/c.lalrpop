@@ -83,7 +83,7 @@ BlockItem: BlockItem = {
 
 pub Expression: Box<Expression> = {
     <ConditionalExpression> => <>,
-    <Identifier> "=" <Expression> => Box::new(Expression::Assignment(<>)),
+    <LValue> "=" <Expression> => Box::new(Expression::Assignment(<>)),
     <Identifier> <CompoundAssignmentOp> <Expression> => Box::new(Expression::CompoundAssignment(<>)),
 }
 
@@ -175,6 +175,12 @@ pub Factor: Box<Expression> = {
     "--" <i:Identifier> => Box::new(Expression::PreMinusMinus(i)),
     <i:Identifier> "++" => Box::new(Expression::PostPlusPlus(i)),
     <i:Identifier> "--" => Box::new(Expression::PostMinusMinus(i)),
+}
+
+pub LValue: LValue = {
+    <i:Identifier> => LValue::Identifier(i),
+    <i:Identifier> "[" <e:Expression> "]" => LValue::PointerDereference(<>),
+    "*" <i:Identifier> => LValue::PointerDereferenceConstant(i, 0),
 }
 
 LiteralNum: i64 = <s:r"[0-9]+"> => i64::from_str(s).unwrap();
