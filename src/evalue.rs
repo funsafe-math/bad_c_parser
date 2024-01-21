@@ -1,4 +1,4 @@
-use std::{collections::HashMap, hash::Hash, iter::Map, fmt::format};
+use std::{collections::HashMap, fmt::format, hash::Hash, iter::Map, sync::RwLockReadGuard};
 
 use crate::ast::*;
 
@@ -25,9 +25,10 @@ impl Context {
 
     // Load variable at name to rax
     pub fn load_variable(&mut self, name: &str) {
+        let offset = self.top_frame().pushed_on_stack_since_begin;
         if let Some(ix) = self.top_frame().get_variable_ix(name) {
             self.asm
-                .push(format!("mov rax, [rsp+{}] ; Loading {}", ix + 8, name));
+                .push(format!("mov rax, [rsp+{}] ; Loading {}", ix + 8 + offset, name));
         } else {
             println!("Use of undeclared variable {}, will load 0", name);
             self.asm.push(format!("mov rax, 0"));
@@ -36,13 +37,25 @@ impl Context {
 
     // Save rax value to location of variable name
     pub fn save_variable(&mut self, name: &str) {
+        let offset = self.top_frame().pushed_on_stack_since_begin;
         if let Some(ix) = self.top_frame().get_variable_ix(name) {
             self.asm
-                .push(format!("mov [rsp+{}], rax ; saving {}", ix + 8, name));
+                .push(format!("mov [rsp+{}], rax ; saving {}", ix + 8 + offset, name ));
         } else {
-            println!("Use of undeclared variable {}, cannot save 0", name);
+            println!("Use of undeclared variable {}, cannot save", name);
             // self.asm.push(format!("movq $0, %rax"));
         }
+    }
+
+    pub fn emit_push(&mut self, register: &str, comment: &str){
+        self.asm.push(format!("push {}  ; {}", register, comment));
+        self.top_frame().pushed_on_stack_since_begin += 8;
+    }
+
+    pub fn emit_pop(&mut self, register: &str, comment: &str){
+        self.asm.push(format!("pop {}  ; {}", register, comment));
+        assert!(self.top_frame().pushed_on_stack_since_begin >= 8);
+        self.top_frame().pushed_on_stack_since_begin -= 8;
     }
 }
 
@@ -56,6 +69,7 @@ struct StackFrme {
     biggest_ix: usize,
     pub size_on_stack: usize,
     pub last_label: usize,
+    pushed_on_stack_since_begin: usize,
 }
 
 impl StackFrme {
@@ -71,7 +85,10 @@ impl StackFrme {
         return self.variables.get(name).copied();
     }
 
-
+    fn get_next_label_ix(&mut self) -> usize {
+        self.last_label += 1;
+        self.last_label
+    }
 }
 
 pub trait Compile {
@@ -120,7 +137,12 @@ impl Compile for BinaryOperator {
                 ctx.asm.push(format!("sub rax, rbx"));
             }
             BinaryOperator::LogicAnd => todo!(),
-            BinaryOperator::LogicOr => todo!(),
+            BinaryOperator::LogicOr => { // HACK: Not compilant with the standard, both values will be evaluated
+                ctx.asm.push(format!("add rax, rbx"));
+                ctx.asm.push(format!("cmp rax, 0"));
+                ctx.asm.push(format!("mov rax, 0"));
+                ctx.asm.push(format!("setne al"));
+            },
             BinaryOperator::LogicEq => {
                 ctx.asm.push(format!("cmp rax, rbx"));
                 ctx.asm.push(format!("mov rax, 0"));
@@ -129,7 +151,7 @@ impl Compile for BinaryOperator {
             BinaryOperator::LogicNeq => {
                 ctx.asm.push(format!("cmp rax, rbx"));
                 ctx.asm.push(format!("mov rax, 0"));
-                ctx.asm.push(format!("setne al, 0"));
+                ctx.asm.push(format!("setne al"));
             }
             BinaryOperator::GreaterThen => todo!(),
             BinaryOperator::LessThen => todo!(),
@@ -155,7 +177,7 @@ impl Compile for Expression {
                         ctx.asm.push(format!("not rax"));
                     }
                     UnaryOp::LogicalNegation => {
-                        ctx.asm.push(format!("cmp rax, 0  ; if eax==0, set ZF"));
+                        ctx.asm.push(format!("cmp rax, 0  ; if rax==0, set ZF"));
                         ctx.asm.push(format!("mov rax, 0  ; zero eax"));
                         ctx.asm
                             .push(format!("sete al      ; set lower rax to 1 if ZF is set"));
@@ -170,11 +192,12 @@ impl Compile for Expression {
             }
             Expression::Op(lhs, op, rhs) => {
                 lhs.compile(ctx);
-                ctx.asm.push(format!("push rax"));
+                ctx.emit_push("rax", "");
                 rhs.compile(ctx);
-                ctx.asm.push(format!("pop rbx"));
-                // a - rax
-                // b - rbx
+                ctx.asm.push(format!("mov rbx, rax"));
+                ctx.emit_pop("rax", "");
+                // lhs - rax
+                // rhs - rbx
                 op.compile(ctx);
             }
             Expression::Variable(var) => {
@@ -215,8 +238,9 @@ impl Compile for Expression {
                         // }
                         let n_dirty_registers = got_arguments.len();
                         for reg in calling_convention.iter().take(n_dirty_registers) {
-                            ctx.asm
-                                .push(format!("push {}  ; will be param, lets save it", reg))
+                            // ctx.asm
+                            //     .push(format!("push {}  ; will be param, lets save it", reg))
+                            ctx.emit_push(reg, "will be param, lets save it");
                         }
 
                         for (i, (arg, reg)) in
@@ -232,7 +256,7 @@ impl Compile for Expression {
 
                         let n_dirty_registers = got_arguments.len();
                         for reg in calling_convention.iter().take(n_dirty_registers).rev() {
-                            ctx.asm.push(format!("pop {}  ; restore saved", reg))
+                            ctx.emit_pop(reg, "restore saved");
                         }
                         // ctx.asm.push(format!("add esp, 8"));
                         // ctx.asm.push(format!("mov  esp, ebp"));
@@ -258,32 +282,64 @@ impl Compile for Statement {
                 expression.compile(ctx);
             }
             Statement::Assignment(_, _) => todo!(),
-            Statement::If(if_statement) => {
-                match if_statement {
-                    If::SingleBranch(expr, statement) => {
-                        expr.compile(ctx);
-                        let label_ix = 0;
-                        let post_conditional = format!(".LBBL{}_post_conditional", label_ix);
-                        ctx.asm.push(format!("cmp rax, 0"));
-                        ctx.asm.push(format!("je {}", post_conditional));
-                        statement.compile(ctx);
-                        ctx.asm.push(format!("{}:", post_conditional));
-                    }
-                    If::TwoBranch(_, _, _) => todo!(),
+            Statement::If(if_statement) => match if_statement {
+                If::SingleBranch(expr, statement) => {
+                    expr.compile(ctx);
+                    let label_ix = ctx.top_frame().get_next_label_ix();
+                    let post_conditional = format!(".LBBL{}_post_conditional", label_ix);
+                    ctx.asm.push(format!("cmp rax, 0"));
+                    ctx.asm.push(format!("je {}", post_conditional));
+                    statement.compile(ctx);
+                    ctx.asm.push(format!("{}:", post_conditional));
+                }
+                If::TwoBranch(expr, on_true, on_false) => {
+                    expr.compile(ctx);
+                    let label_ix = ctx.top_frame().get_next_label_ix();
+                    let if_conditional = format!(".LBBL{}_2", label_ix);
+                    let else_conditional = format!(".LBBL{}_2", label_ix);
+                    let post_conditional = format!(".LBBL{}_3", label_ix);
+                    ctx.asm.push(format!("cmp rax, 0"));
+                    ctx.asm.push(format!("je {}", &else_conditional));
+                    on_true.compile(ctx);
+                    ctx.asm.push(format!("jmp {}", &post_conditional));
+                    ctx.asm.push(format!("{}:", &else_conditional));
+                    on_false.compile(ctx);
+                    ctx.asm.push(format!("{}:", &post_conditional));
                 }
             },
-            Statement::CompoundStatement(compound_statement) => {
-                match compound_statement {
-                    CompoundStatement::Empty => {},
-                    CompoundStatement::StatementList(list) => {
-                        for item in list {
-                            item.compile(ctx);
-                        }
-                    },
+            Statement::CompoundStatement(compound_statement) => match compound_statement {
+                CompoundStatement::Empty => {}
+                CompoundStatement::StatementList(list) => {
+                    for item in list {
+                        item.compile(ctx);
+                    }
+                }
+            },
+            Statement::For(a_expr, b_expr, c_expr, statement) => {
+                let label_ix = ctx.top_frame().get_next_label_ix();
+                let post = format!(".LBBL{}_2", label_ix);
+                let pre = format!(".LBBL{}_0", label_ix);
+                if let Some(a_expr) = a_expr {
+                    a_expr.compile(ctx);
                 }
 
-            },
-            Statement::For(_, _, _, _) => todo!(),
+                ctx.asm.push(format!("{}:", &pre));
+                if let Some(b_expr) = b_expr {
+                    b_expr.compile(ctx);
+                    ctx.asm.push(format!("cmp rax, 0"));
+                    ctx.asm.push(format!("je {}", &post));
+                } else {
+                    // Infinite loop
+                }
+
+                statement.compile(ctx);
+                if let Some(c_expr) = c_expr {
+                    c_expr.compile(ctx);
+                }
+                ctx.asm.push(format!("jmp {}", &pre));
+
+                ctx.asm.push(format!("{}:", &post));
+            }
             Statement::ForDecl(_, _, _, _) => todo!(),
             Statement::While(_, _) => todo!(),
             Statement::Do(_, _) => todo!(),
@@ -316,30 +372,34 @@ impl Compile for FunctionDefinition {
 
         let first_function_instruction_ix = ctx.asm.len();
 
-        let mut required_stack = self.required_stack() + 8;  // +8 for return ptr
-        // Setup new stack frame
+        let mut required_stack = self.required_stack() + 8; // +8 for return ptr
+                                                            // Setup new stack frame
         let mut frame = StackFrme::default();
 
         ctx.stack.push(frame);
 
         // Copy arguments onto the stack TODO: fix
         let calling_convention = calling_convention();
-        for (i, arg) in self.arguments.iter().enumerate() {
+        for arg in &self.arguments {
             ctx.top_frame().add_variable(&arg.identifier.name);
             required_stack += arg.type_specifier.size();
-            ctx.asm.push(format!(
-                "mov rax, {}  ; copy argument {} onto stack",
-                calling_convention[i], &arg.identifier.name
-            ));
-            ctx.save_variable(&arg.identifier.name);
         }
-        ctx.top_frame().size_on_stack = required_stack;
 
         // Allocate space for stack variables
         ctx.asm.push(format!(
             "sub rsp, {}  ; setup stack space for local variables",
             required_stack
         ));
+        ctx.top_frame().size_on_stack = required_stack;
+
+        for (i, arg) in self.arguments.iter().enumerate() {
+            ctx.asm.push(format!(
+                "mov rax, {}  ; copy argument {} onto stack",
+                calling_convention[i], &arg.identifier.name
+            ));
+            ctx.save_variable(&arg.identifier.name);
+        }
+
 
         // ctx.asm.push(format!("push rbp; Setup new stack frame"));
         // ctx.asm

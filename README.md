@@ -12,6 +12,7 @@ For grammar, go to [c.lalrpop](src/c.lalrpop) file.
 - [ ] Comment support
 - [ ] C preprocessor support
 - [ ] Optimization pass
+- [ ] Scopres
 
 # Some x86 definitons
 ## Registers:
