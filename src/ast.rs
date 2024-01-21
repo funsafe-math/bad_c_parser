@@ -117,11 +117,11 @@ impl BlockItem {
     }
 }
 
-#[derive(Debug, Clone)]
-pub enum Declaration {
-    VariableDeclaration(TypeSpecifier, Identifier),
-    VariableDeclarationAssignment(TypeSpecifier, Identifier, Box<Expression>),
-}
+// #[derive(Debug, Clone)]
+// pub enum Declaration {
+//     VariableDeclaration(TypeSpecifier, Identifier),
+//     VariableDeclarationAssignment(TypeSpecifier, Identifier, Box<Expression>),
+// }
 
 #[derive(Debug, Clone)]
 pub enum If {

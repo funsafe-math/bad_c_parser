@@ -1,12 +1,11 @@
 use std::{
-    collections::BTreeSet, collections::HashMap, fmt::format, hash::Hash, iter::Map,
-    sync::RwLockReadGuard, process::id,
+    collections::BTreeSet, collections::HashMap,
 };
 
 use crate::ast::*;
 
 #[derive(Debug, Default)]
-struct Context {
+pub struct Context {
     functions: HashMap<String, FunctionDeclaration>,
     defined_functions: BTreeSet<String>,
     asm: Vec<String>,
@@ -107,7 +106,7 @@ pub fn calling_convention() -> [&'static str; 6] {
 }
 
 #[derive(Debug, Default)]
-struct StackFrme {
+pub struct StackFrme {
     pub variables: HashMap<String, usize>,
     biggest_ix: usize,
     pub size_on_stack: usize,
@@ -119,7 +118,7 @@ impl StackFrme {
     fn add_variable(&mut self, name: &str) -> usize {
         let size_in_bytes = 8;
         let to_add = self.biggest_ix;
-        let ret = self.variables.insert(name.to_string(), to_add);
+        let _ret = self.variables.insert(name.to_string(), to_add);
         self.biggest_ix += size_in_bytes;
         assert!(self.biggest_ix < self.size_on_stack);
         return to_add;
@@ -288,7 +287,7 @@ impl Compile for Expression {
             Expression::FunctionCall(id, got_arguments) => {
                 if let Some(func) = &ctx.functions.get(&id.name) {
                     let expected_args = &func.arguments.clone();
-                    let variadic = func.variadic;
+                    let _variadic = func.variadic;
                     if got_arguments.len() > 6 {
                         println!("Currently, more than 6 function parameters is not supported");
                     } else if !func.variadic && got_arguments.len() != expected_args.len() {
@@ -548,7 +547,7 @@ impl Compile for FunctionDefinition {
         let first_function_instruction_ix = ctx.asm.len();
 
         // Setup new stack frame
-        let mut frame = StackFrme::default();
+        let frame = StackFrme::default();
 
         ctx.stack.push(frame);
 
@@ -619,7 +618,7 @@ impl Program {
                     println!("Compiling function {:#?}", &function.identifier.name);
                     function.compile(&mut ctx);
                 }
-                TopLevelItem::VariableDeclaration(variable) => {
+                TopLevelItem::VariableDeclaration(_variable) => {
                     todo!()
                 }
                 TopLevelItem::FunctionDeclaration(function_declaration) => {

@@ -1,16 +1,15 @@
-use crate::c::ExpressionParser;
-use crate::c::FunctionDefinitionParser;
-use crate::c::IdentifierParser;
-use crate::c::IfParser;
-use crate::c::StatementParser;
+
+
+
+
+
 use lalrpop_util::lalrpop_mod;
-use std::env;
+
 use std::fs;
 use std::fs::File;
 use std::io::Write;
 mod ast;
 mod evalue;
-use evalue::*;
 
 lalrpop_mod!(pub c); // synthesized by LALRPOP
                      //
@@ -113,12 +112,12 @@ fn main() {
                 println!("Parsed: {:#?}", &parsed);
                 let asm: String = parsed.compile();
                 println!("Generated asm: \n{}", asm);
-                let mut file = File::create("/home/wojciech/projects/studia/metody-i-algorytmy-kompilacji/projekt/parser_project/output/output.s");
+                let file = File::create("/home/wojciech/projects/studia/metody-i-algorytmy-kompilacji/projekt/parser_project/output/output.s");
                 match file {
                     Ok(mut file) => {
                         let result = file.write_all(asm.as_bytes());
                         match result {
-                            Ok(ok) => {}
+                            Ok(_ok) => {}
                             Err(err) => println!("Failed to save to file, because: {}", err),
                         }
                     }
@@ -135,9 +134,18 @@ fn main() {
                         print_souce_location(&code, location);
 
                     },
-                    lalrpop_util::ParseError::UnrecognizedEof { location, expected } => todo!(),
+                    lalrpop_util::ParseError::UnrecognizedEof { location, expected } => {
+                        println!("Parse error: Unrecognized end of file at {}", location);
+                        print_souce_location(&code, location);
+                        println!("Exprected one of:");
+                        for e in &expected {
+                            print!("- {}", e);
+                        }
+                        println!("");
+
+                    },
                     lalrpop_util::ParseError::UnrecognizedToken { token, expected } => {
-                        let (begin, token, len) = token;
+                        let (begin, token, _len) = token;
                         println!("Parse error: UnrecognizedToken '{}'", token);
                         print_souce_location(&code, begin);
                         println!("Exprected one of:");
@@ -146,8 +154,15 @@ fn main() {
                         }
                         println!("");
                     },
-                    lalrpop_util::ParseError::ExtraToken { token } => todo!(),
-                    lalrpop_util::ParseError::User { error } => todo!(),
+                    lalrpop_util::ParseError::ExtraToken { token } => {
+                        let (begin, token, _len) = token;
+                        println!("Parse error: Extra token at {}", begin);
+                        println!("Got token {}", token);
+                        print_souce_location(&code, begin);
+                    },
+                    lalrpop_util::ParseError::User { error } => {
+                        println!("Parse error: {}", error);
+                    },
                 }
             }
         }
