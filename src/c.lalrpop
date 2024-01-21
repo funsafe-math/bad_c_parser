@@ -34,6 +34,7 @@ pub FunctionDeclaration: FunctionDeclaration = {
     <t:TypeSpecifier> <i:Identifier> "(" <p:ParameterList> ")" ";" => FunctionDeclaration::new(<>, false),
     <t:TypeSpecifier> <i:Identifier> "(" <p:ParameterList> "..." ")" ";" => FunctionDeclaration::new(<>, true),
     <t:TypeSpecifier> <i:Identifier> "(" <p:ParameterList> ",..." ")" ";" => FunctionDeclaration::new(<>, true),
+    <t:TypeSpecifier> <i:Identifier> "(" <p:ParameterList> ", ..." ")" ";" => FunctionDeclaration::new(<>, true),
 }
 
 pub Identifier: Identifier = <s:r"[a-zA-Z_][0-9a-zA-Z_]*"> => Identifier{name: s.to_string()};

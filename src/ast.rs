@@ -64,8 +64,8 @@ impl FunctionDefinition {
                 let mut ret = 0;
                 for block_item in list {
                     match block_item {
-                        BlockItem::Statement(_) => {
-                            // TODO: implement
+                        BlockItem::Statement(statement) => {
+                            ret += statement.required_stack();
                         }
                         BlockItem::Declaration(decl) => {
                             ret += decl.type_specifier.size();
@@ -108,6 +108,15 @@ pub enum BlockItem {
     Declaration(VariableDeclaration),
 }
 
+impl BlockItem {
+    fn required_stack(&self) -> usize {
+        match self {
+            BlockItem::Statement(statement) => statement.required_stack(),
+            BlockItem::Declaration(decl) => decl.type_specifier.size(),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum Declaration {
     VariableDeclaration(TypeSpecifier, Identifier),
@@ -146,10 +155,43 @@ pub enum Statement {
     Empty,
 }
 
+impl Statement {
+    fn required_stack(&self) -> usize {
+        match self {
+            Statement::ReturnExpression(_) => 0,
+            Statement::Expression(_) => 0,
+            Statement::Assignment(_, _) => 0,
+            Statement::If(if_statement) => match if_statement {
+                If::SingleBranch(_, statement) => statement.required_stack(),
+                If::TwoBranch(_, st_a, st_b) => st_a.required_stack() + st_b.required_stack(),
+            },
+            Statement::CompoundStatement(statement) => statement.required_stack(),
+            Statement::For(_, _, _, statement) => statement.required_stack(),
+            Statement::ForDecl(decl, _, _, statement) => {
+                decl.type_specifier.size() + statement.required_stack()
+            }
+            Statement::While(_, statement) => statement.required_stack(),
+            Statement::Do(statement, _) => statement.required_stack(),
+            Statement::Break => 0,
+            Statement::Continue => 0,
+            Statement::Empty => 0,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum CompoundStatement {
     Empty,
     StatementList(Vec<BlockItem>),
+}
+
+impl CompoundStatement {
+    fn required_stack(&self) -> usize {
+        match self {
+            CompoundStatement::Empty => 0,
+            CompoundStatement::StatementList(list) => list.iter().map(|e| e.required_stack()).sum(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

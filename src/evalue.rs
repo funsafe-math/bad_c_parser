@@ -1,10 +1,11 @@
-use std::{collections::HashMap, fmt::format, hash::Hash, iter::Map, sync::RwLockReadGuard};
+use std::{collections::HashMap, fmt::format, hash::Hash, iter::Map, sync::RwLockReadGuard, collections::BTreeSet};
 
 use crate::ast::*;
 
 #[derive(Debug, Default)]
 struct Context {
     functions: HashMap<String, FunctionDeclaration>,
+    defined_functions: BTreeSet<String>,
     asm: Vec<String>,
     stack: Vec<StackFrme>,
     strings: Vec<(String, String)>,
@@ -105,6 +106,7 @@ impl StackFrme {
         let to_add = self.biggest_ix;
         let ret = self.variables.insert(name.to_string(), to_add);
         self.biggest_ix += size_in_bytes;
+        assert!(self.biggest_ix < self.size_on_stack);
         return to_add;
     }
 
@@ -135,7 +137,7 @@ impl Compile for VariableDeclaration {
                 );
             }
         }
-        let mut frame = ctx.stack.last_mut().unwrap();
+        let frame = ctx.stack.last_mut().unwrap();
         if frame.variables.contains_key(&self.identifier.name) {
             println!("Error, variable {} already exists", &self.identifier.name);
         } else {
@@ -181,8 +183,16 @@ impl Compile for BinaryOperator {
                 ctx.asm.push(format!("mov rax, 0"));
                 ctx.asm.push(format!("setne al"));
             }
-            BinaryOperator::GreaterThen => todo!(),
-            BinaryOperator::LessThen => todo!(),
+            BinaryOperator::GreaterThen => {
+                ctx.asm.push(format!("cmp rax, rbx"));
+                ctx.asm.push(format!("mov rax, 0"));
+                ctx.asm.push(format!("seta al"));
+            },
+            BinaryOperator::LessThen => {
+                ctx.asm.push(format!("cmp rax, rbx"));
+                ctx.asm.push(format!("mov rax, 0"));
+                ctx.asm.push(format!("setb al"));
+            },
             BinaryOperator::Greq => todo!(),
             BinaryOperator::Leq => todo!(),
         }
@@ -348,7 +358,6 @@ impl Compile for Statement {
                 If::TwoBranch(expr, on_true, on_false) => {
                     expr.compile(ctx);
                     let label_ix = ctx.top_frame().get_next_label_ix();
-                    let if_conditional = format!(".LBBL{}_2", label_ix);
                     let else_conditional = format!(".LBBL{}_2", label_ix);
                     let post_conditional = format!(".LBBL{}_3", label_ix);
                     ctx.asm.push(format!("cmp rax, 0"));
@@ -393,9 +402,54 @@ impl Compile for Statement {
 
                 ctx.asm.push(format!("{}:", &post));
             }
-            Statement::ForDecl(_, _, _, _) => todo!(),
-            Statement::While(_, _) => todo!(),
-            Statement::Do(_, _) => todo!(),
+            Statement::ForDecl(decl, b_expr, c_expr, statement) => {
+                let label_ix = ctx.top_frame().get_next_label_ix();
+                let post = format!(".LBBL{}_2", label_ix);
+                let pre = format!(".LBBL{}_0", label_ix);
+                decl.compile(ctx);
+
+                ctx.asm.push(format!("{}:", &pre));
+                if let Some(b_expr) = b_expr {
+                    b_expr.compile(ctx);
+                    ctx.asm.push(format!("cmp rax, 0"));
+                    ctx.asm.push(format!("je {}", &post));
+                } else {
+                    // Infinite loop
+                }
+
+                statement.compile(ctx);
+                if let Some(c_expr) = c_expr {
+                    c_expr.compile(ctx);
+                }
+                ctx.asm.push(format!("jmp {}", &pre));
+
+                ctx.asm.push(format!("{}:", &post));
+            }
+            Statement::While(expr, statement) => {
+                let label_ix = ctx.top_frame().get_next_label_ix();
+                let pre = format!(".LBBL{}_0", label_ix);
+                let post = format!(".LBBL{}_2", label_ix);
+                ctx.asm.push(format!("{}:", &pre));
+                expr.compile(ctx);
+                ctx.asm.push(format!("cmp rax, 0"));
+                ctx.asm.push(format!("je {}", &post));
+                statement.compile(ctx);
+                ctx.asm.push(format!("jmp {}", &pre));
+                ctx.asm.push(format!("{}:", &post));
+            }
+            Statement::Do(statement, expr) => {
+                let label_ix = ctx.top_frame().get_next_label_ix();
+                let pre = format!(".LBBL{}_0", label_ix);
+                let post = format!(".LBBL{}_2", label_ix);
+
+                ctx.asm.push(format!("{}:", &pre));
+                statement.compile(ctx);
+                expr.compile(ctx);
+                ctx.asm.push(format!("cmp rax, 0"));
+                ctx.asm.push(format!("je {}", &post));
+                ctx.asm.push(format!("jmp {}", &pre));
+                ctx.asm.push(format!("{}:", &post));
+            },
             Statement::Break => todo!(),
             Statement::Continue => todo!(),
             Statement::Empty => todo!(),
@@ -422,28 +476,31 @@ impl Compile for FunctionDefinition {
             .insert(self.identifier.name.clone(), self.into_declaration());
         ctx.asm.push(format!("global {}", self.identifier.name));
         ctx.asm.push(format!("{}:", self.identifier.name));
+        ctx.defined_functions.insert(self.identifier.name.clone());
 
         let first_function_instruction_ix = ctx.asm.len();
 
-        let mut required_stack = self.required_stack() + 8; // +8 for return ptr
-                                                            // Setup new stack frame
+        // Setup new stack frame
         let mut frame = StackFrme::default();
 
         ctx.stack.push(frame);
 
+        ctx.top_frame().size_on_stack = self.required_stack() + 8; // +8 for return ptr
+
         // Copy arguments onto the stack TODO: fix
         let calling_convention = calling_convention();
         for arg in &self.arguments {
+            ctx.top_frame().size_on_stack += arg.type_specifier.size();
             ctx.top_frame().add_variable(&arg.identifier.name);
-            required_stack += arg.type_specifier.size();
         }
 
         // Allocate space for stack variables
+        let required_stack = ctx.top_frame().size_on_stack;
         ctx.asm.push(format!(
             "sub rsp, {}  ; setup stack space for local variables",
             required_stack
         ));
-        ctx.top_frame().size_on_stack = required_stack;
+        // ctx.top_frame().size_on_stack = required_stack;
 
         for (i, arg) in self.arguments.iter().enumerate() {
             ctx.asm.push(format!(
@@ -528,8 +585,14 @@ impl Program {
 
         // extern printf
         // "#.to_string());
-        ctx.asm.push(format!("extern putchar"));
-        ctx.asm.push(format!("extern printf"));
+        // ctx.asm.push(format!("extern putchar"));
+        // ctx.asm.push(format!("extern printf"));
+        // Mark unknown symbols extern
+        for (name, _) in &ctx.functions {
+            if ! ctx.defined_functions.contains(name){
+                ctx.asm.push(format!("extern {}", name));
+            }
+        }
 
         ctx.asm.iter().map(|x| format!("{}\n", x)).collect()
     }

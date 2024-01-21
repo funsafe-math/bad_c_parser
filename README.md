@@ -5,14 +5,14 @@ For grammar, go to [c.lalrpop](src/c.lalrpop) file.
 
 ## TODO
 - [ ] Fill in asm emission
-- [ ] Extern function declaration
-- [ ] Function declaration handling
-- [ ] Error handling
-- [ ] Nice error handling
+- [-] Extern function declaration
+- [x] Function declaration handling
+- [-] Error handling
+- [-] Nice error handling
 - [ ] Comment support
 - [ ] C preprocessor support
 - [ ] Optimization pass
-- [ ] Scopres
+- [ ] Scopes
 
 # Some x86 definitons
 ## Registers:
