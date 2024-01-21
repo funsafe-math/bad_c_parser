@@ -164,12 +164,14 @@ pub Factor: Box<Expression> = {
     <n:LiteralNum> => Box::new(Expression::LiteralNum(n)),
     <n:LiteralHex> => Box::new(Expression::LiteralNum(n)),
     <n:LiteralBin> => Box::new(Expression::LiteralNum(n)),
+    <n:LiteralString> => Box::new(n),
     <i:Identifier> => Box::new(Expression::Variable(i)),
 }
 
 LiteralNum: i64 = <s:r"[0-9]+"> => i64::from_str(s).unwrap();
 LiteralHex: i64 = <s:r"0x[0-f]+"> => i64::from_str_radix(s.strip_prefix("0x").unwrap(), 16).unwrap();
 LiteralBin: i64 = <s:r"0b[0-f]+"> => i64::from_str_radix(s.strip_prefix("0b").unwrap(), 2).unwrap();
+LiteralString: Expression = <s:r#""[^"]*""#> => Expression::LiteralString(s[1..s.len() -1].to_string());
 
 pub TypeSpecifier: TypeSpecifier = {
     Char => TypeSpecifier::Char,
@@ -181,6 +183,7 @@ pub TypeSpecifier: TypeSpecifier = {
     Float => TypeSpecifier::Float,
     Double => TypeSpecifier::Double,
     Void => TypeSpecifier::Void,
+    <t:TypeSpecifier> "*" => TypeSpecifier::Pointer(Box::new(<>)),
 }
 
 pub VariableDeclaration: VariableDeclaration  = {

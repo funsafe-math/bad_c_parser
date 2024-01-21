@@ -7,11 +7,18 @@ struct Context {
     functions: HashMap<String, FunctionDeclaration>,
     asm: Vec<String>,
     stack: Vec<StackFrme>,
+    strings: Vec<(String, String)>,
+    last_string_ix: usize,
+
 }
 
 impl Context {
     pub fn top_frame(&mut self) -> &mut StackFrme {
         self.stack.last_mut().unwrap()
+    }
+
+    pub fn top_frame_const(&self) -> &StackFrme {
+        self.stack.last().unwrap()
     }
 
     pub fn generate_epilogue(&mut self) {
@@ -28,7 +35,7 @@ impl Context {
         let offset = self.top_frame().pushed_on_stack_since_begin;
         if let Some(ix) = self.top_frame().get_variable_ix(name) {
             self.asm
-                .push(format!("mov rax, [rsp+{}] ; Loading {}", ix + 8 + offset, name));
+                .push(format!("mov rax, [rsp+{}]  ; Load {}", ix + 8 + offset, name));
         } else {
             println!("Use of undeclared variable {}, will load 0", name);
             self.asm.push(format!("mov rax, 0"));
@@ -40,7 +47,7 @@ impl Context {
         let offset = self.top_frame().pushed_on_stack_since_begin;
         if let Some(ix) = self.top_frame().get_variable_ix(name) {
             self.asm
-                .push(format!("mov [rsp+{}], rax ; saving {}", ix + 8 + offset, name ));
+                .push(format!("mov [rsp+{}], rax  ; Save {}", ix + 8 + offset, name ));
         } else {
             println!("Use of undeclared variable {}, cannot save", name);
             // self.asm.push(format!("movq $0, %rax"));
@@ -57,6 +64,21 @@ impl Context {
         assert!(self.top_frame().pushed_on_stack_since_begin >= 8);
         self.top_frame().pushed_on_stack_since_begin -= 8;
     }
+
+    pub fn create_string(&mut self, value: &str) -> String {
+        self.last_string_ix += 1;
+        let str_name = format!("L.str.{}", self.last_string_ix);
+        self.strings.push((str_name.clone(), value.to_string()));
+        str_name
+    }
+
+    pub fn bytes_to_stack_alignment(&self) -> usize {
+        // Stack needs to be 16 bytes aligned
+        let top_frame = self.top_frame_const();
+        let current_alignment = top_frame.size_on_stack & 0xf + top_frame.pushed_on_stack_since_begin &0xf;
+        8 - current_alignment
+    }
+
 }
 
 pub fn calling_convention() -> [&'static str; 6] {
@@ -252,7 +274,17 @@ impl Compile for Expression {
                                 reg, &expected_args[i].identifier.name, id.name
                             ));
                         }
+
+                        let bytes_to_alignment = ctx.bytes_to_stack_alignment();
+                        if bytes_to_alignment != 0 {
+                            ctx.asm.push(format!("sub rsp, {}  ; Align the stack for function call", bytes_to_alignment));
+                        }
+
                         ctx.asm.push(format!("call {}", id.name));
+
+                        if bytes_to_alignment != 0 {
+                            ctx.asm.push(format!("add rsp, {}  ; Restore stack after function call", bytes_to_alignment));
+                        }
 
                         let n_dirty_registers = got_arguments.len();
                         for reg in calling_convention.iter().take(n_dirty_registers).rev() {
@@ -265,6 +297,11 @@ impl Compile for Expression {
                     println!("Function named {} unknown", &id.name);
                 }
             }
+            Expression::LiteralString(s) => {
+                let label = ctx.create_string(&s);
+                ctx.asm.push(format!("lea rax, [rel {}]", &label));
+                // ctx.asm.push(format!("mov rax, rdi"));
+            },
         }
     }
 }
@@ -454,6 +491,13 @@ impl Program {
                 }
             }
         }
+
+        // Create strings
+        ctx.asm.push(format!("section .rodata"));
+        for (label, value) in ctx.strings {
+            ctx.asm.push(format!("    {} db `{}`, 0", label, value));
+        }
+
         //         ctx.asm.push(r#"
         // print_rax:
         // ; Call printf.
@@ -470,6 +514,7 @@ impl Program {
         // extern printf
         // "#.to_string());
         ctx.asm.push(format!("extern putchar"));
+        ctx.asm.push(format!("extern printf"));
 
         ctx.asm.iter().map(|x| format!("{}\n", x)).collect()
     }

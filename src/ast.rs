@@ -151,6 +151,7 @@ pub enum CompoundStatement {
 #[derive(Debug, Clone)]
 pub enum Expression {
     LiteralNum(i64),
+    LiteralString(String),
     UnaryOp(UnaryOp, Box<Expression>),
     Op(Box<Expression>, BinaryOperator, Box<Expression>),
     Variable(Identifier),
@@ -189,6 +190,7 @@ pub enum TypeSpecifier {
     Float,
     Double,
     Void,
+    Pointer(Box<TypeSpecifier>),
 }
 
 impl TypeSpecifier {
@@ -196,13 +198,14 @@ impl TypeSpecifier {
         match self {
             TypeSpecifier::Char => todo!(),
             TypeSpecifier::Short => todo!(),
-            TypeSpecifier::Int => 4,
+            TypeSpecifier::Int => 8, // TODO: fix this
             TypeSpecifier::Long => 8,
             TypeSpecifier::Signed => todo!(),
             TypeSpecifier::Unsigned => todo!(),
             TypeSpecifier::Float => todo!(),
             TypeSpecifier::Double => todo!(),
             TypeSpecifier::Void => todo!(),
+            TypeSpecifier::Pointer(_) => 8, // We are on 64bit machine
         }
     }
 }
