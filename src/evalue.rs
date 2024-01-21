@@ -1,4 +1,7 @@
-use std::{collections::HashMap, fmt::format, hash::Hash, iter::Map, sync::RwLockReadGuard, collections::BTreeSet};
+use std::{
+    collections::BTreeSet, collections::HashMap, fmt::format, hash::Hash, iter::Map,
+    sync::RwLockReadGuard, process::id,
+};
 
 use crate::ast::*;
 
@@ -39,6 +42,18 @@ impl Context {
                 ix + 8 + offset,
                 name
             ));
+        } else {
+            println!("Use of undeclared variable {}, will load 0", name);
+            self.asm.push(format!("mov rax, 0"));
+        }
+    }
+
+    pub fn load_variable_ptr(&mut self, name: &str) {
+        let offset = self.top_frame().pushed_on_stack_since_begin;
+        if let Some(ix) = self.top_frame().get_variable_ix(name) {
+            self.asm.push(format!("mov rax, rsp  ; Load {} ptr", name));
+            self.asm
+                .push(format!("add rax, {}  ; Load {} ptr", ix + 8 + offset, name));
         } else {
             println!("Use of undeclared variable {}, will load 0", name);
             self.asm.push(format!("mov rax, 0"));
@@ -187,14 +202,22 @@ impl Compile for BinaryOperator {
                 ctx.asm.push(format!("cmp rax, rbx"));
                 ctx.asm.push(format!("mov rax, 0"));
                 ctx.asm.push(format!("seta al"));
-            },
+            }
             BinaryOperator::LessThen => {
                 ctx.asm.push(format!("cmp rax, rbx"));
                 ctx.asm.push(format!("mov rax, 0"));
                 ctx.asm.push(format!("setb al"));
-            },
-            BinaryOperator::Greq => todo!(),
-            BinaryOperator::Leq => todo!(),
+            }
+            BinaryOperator::Greq => {
+                ctx.asm.push(format!("cmp rax, rbx"));
+                ctx.asm.push(format!("mov rax, 0"));
+                ctx.asm.push(format!("setge al"));
+            }
+            BinaryOperator::Leq => {
+                ctx.asm.push(format!("cmp rax, rbx"));
+                ctx.asm.push(format!("mov rax, 0"));
+                ctx.asm.push(format!("setle al"));
+            }
         }
     }
 }
@@ -242,7 +265,19 @@ impl Compile for Expression {
                 let name = &var.name;
                 ctx.load_variable(name);
             }
-            Expression::Conditional(_, _, _) => todo!(),
+            Expression::Conditional(conditional, expr_a, expr_b) => {
+                let label_ix = ctx.top_frame().get_next_label_ix();
+                let else_conditional = format!(".LBBL{}_2", label_ix);
+                let post_conditional = format!(".LBBL{}_3", label_ix);
+                conditional.compile(ctx);
+                ctx.asm.push(format!("cmp rax, 0"));
+                ctx.asm.push(format!("je {}", &else_conditional));
+                expr_a.compile(ctx);
+                ctx.asm.push(format!("jmp {}", &post_conditional));
+                ctx.asm.push(format!("{}:", &else_conditional));
+                expr_b.compile(ctx);
+                ctx.asm.push(format!("{}:", &post_conditional));
+            }
             Expression::Assignment(id, expr) => {
                 expr.compile(ctx);
                 let name = &id.name;
@@ -335,7 +370,10 @@ impl Compile for Expression {
                 ctx.load_variable(&identifier.name);
                 ctx.asm.push(format!("add rax, rdx"));
                 ctx.asm.push(format!("mov rax, [rax]"));
-            },
+            }
+            Expression::Ampersand(identifier) => {
+                ctx.load_variable_ptr(&identifier.name);
+            }
         }
     }
 }
@@ -457,7 +495,7 @@ impl Compile for Statement {
                 ctx.asm.push(format!("je {}", &post));
                 ctx.asm.push(format!("jmp {}", &pre));
                 ctx.asm.push(format!("{}:", &post));
-            },
+            }
             Statement::Break => todo!(),
             Statement::Continue => todo!(),
             Statement::Empty => todo!(),
@@ -597,7 +635,7 @@ impl Program {
         // ctx.asm.push(format!("extern printf"));
         // Mark unknown symbols extern
         for (name, _) in &ctx.functions {
-            if ! ctx.defined_functions.contains(name){
+            if !ctx.defined_functions.contains(name) {
                 ctx.asm.push(format!("extern {}", name));
             }
         }

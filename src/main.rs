@@ -93,7 +93,7 @@ fn print_souce_location(contents: &str, location: usize){
     // println!("{}", before);
     let mut from_start = 0;
     for line in contents.split("\n") {
-        if from_start < location && location < (from_start + line.len()){
+        if from_start <= location && location < (from_start + line.len()){
             let line_position = location - from_start;
             println!("{}", line);
             println!("{}^", " ".repeat(line_position))
@@ -131,7 +131,7 @@ fn main() {
                 println!("Failed to parse file {}", filepath);
                 match err {
                     lalrpop_util::ParseError::InvalidToken { location } => {
-                        println!("Parse error: Invalid token");
+                        println!("Parse error: Invalid token at {}", location);
                         print_souce_location(&code, location);
 
                     },

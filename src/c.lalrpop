@@ -170,6 +170,7 @@ pub Factor: Box<Expression> = {
     <n:LiteralString> => Box::new(n),
     <i:Identifier> => Box::new(Expression::Variable(i)),
     <i:Identifier> "[" <e:Expression> "]"=> Box::new(Expression::IndexOperator(i, e)),
+    "&" <i:Identifier> => Box::new(Expression::Ampersand(i)),
 }
 
 LiteralNum: i64 = <s:r"[0-9]+"> => i64::from_str(s).unwrap();
@@ -258,6 +259,7 @@ match {
     "~",
     ",",
     "!",
+    "&",
     "++",
     "--",
     "char",
