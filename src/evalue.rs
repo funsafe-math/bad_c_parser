@@ -243,12 +243,6 @@ impl Compile for Expression {
                         ctx.asm
                             .push(format!("sete al      ; set lower rax to 1 if ZF is set"));
                     }
-                    UnaryOp::PlusPlus => {
-                        ctx.asm.push(format!("add rax, 1"));
-                    }
-                    UnaryOp::MinusMinus => {
-                        ctx.asm.push(format!("sub rax, 1"));
-                    }
                 }
             }
             Expression::Op(lhs, op, rhs) => {
@@ -374,6 +368,33 @@ impl Compile for Expression {
             Expression::Ampersand(identifier) => {
                 ctx.load_variable_ptr(&identifier.name);
             }
+            Expression::PostPlusPlus(identifier) => {
+                ctx.load_variable(&identifier.name);
+                ctx.emit_push("rax", &format!("Save {} pre incrementation", &identifier.name));
+                ctx.asm.push(format!("inc rax"));
+                ctx.save_variable(&identifier.name);
+                ctx.emit_pop("rax", "");
+            },
+            Expression::PostMinusMinus(identifier) => {
+                let name = &identifier.name;
+                ctx.load_variable(name);
+                ctx.emit_push("rax", &format!("Save {} pre decrementation", name));
+                ctx.asm.push(format!("dec rax"));
+                ctx.save_variable(name);
+                ctx.emit_pop("rax", "");
+            },
+            Expression::PrePlusPlus(identifier) => {
+                let name = &identifier.name;
+                ctx.load_variable(name);
+                ctx.asm.push(format!("inc rax"));
+                ctx.save_variable(name);
+            },
+            Expression::PreMinusMinus(identifier) => {
+                let name = &identifier.name;
+                ctx.load_variable(name);
+                ctx.asm.push(format!("dec rax"));
+                ctx.save_variable(name);
+            },
         }
     }
 }

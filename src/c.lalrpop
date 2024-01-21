@@ -171,12 +171,21 @@ pub Factor: Box<Expression> = {
     <i:Identifier> => Box::new(Expression::Variable(i)),
     <i:Identifier> "[" <e:Expression> "]"=> Box::new(Expression::IndexOperator(i, e)),
     "&" <i:Identifier> => Box::new(Expression::Ampersand(i)),
+    "++" <i:Identifier> => Box::new(Expression::PrePlusPlus(i)),
+    "--" <i:Identifier> => Box::new(Expression::PreMinusMinus(i)),
+    <i:Identifier> "++" => Box::new(Expression::PostPlusPlus(i)),
+    <i:Identifier> "--" => Box::new(Expression::PostMinusMinus(i)),
 }
 
 LiteralNum: i64 = <s:r"[0-9]+"> => i64::from_str(s).unwrap();
 LiteralHex: i64 = <s:r"0x[0-f]+"> => i64::from_str_radix(s.strip_prefix("0x").unwrap(), 16).unwrap();
 LiteralBin: i64 = <s:r"0b[0-f]+"> => i64::from_str_radix(s.strip_prefix("0b").unwrap(), 2).unwrap();
-LiteralString: Expression = <s:r#""[^"]*""#> => Expression::LiteralString(s[1..s.len() -1].to_string());
+LiteralString: Expression = {
+    <s:r#""[^"]*""#> => Expression::LiteralString(s[1..s.len() -1].to_string()),
+    <a:LiteralString> <s:r#""[^"]*""#> => {
+        let Expression::LiteralString(a) = a else {todo!()};
+        Expression::LiteralString(format!("{}{}", a, s[1..s.len() -1].to_string()))},
+} 
 
 pub TypeSpecifier: TypeSpecifier = {
     Char => TypeSpecifier::Char,
@@ -200,8 +209,6 @@ pub UnaryOp: UnaryOp = {
     "-" => UnaryOp::Minus,
     "~" => UnaryOp::BitwiseNegation,
     "!" => UnaryOp::LogicalNegation,
-    "++" => UnaryOp::PlusPlus,
-    "--" => UnaryOp::MinusMinus,
 }
 
 Char = "char";

@@ -207,6 +207,10 @@ pub enum Expression {
     FunctionCall(Identifier, Vec<Box<Expression>>), // name+arguments
     IndexOperator(Identifier, Box<Expression>), // name + index expr
     Ampersand(Identifier),
+    PostPlusPlus(Identifier),
+    PostMinusMinus(Identifier),
+    PrePlusPlus(Identifier),
+    PreMinusMinus(Identifier),
 }
 
 // Precedence: https://en.cppreference.com/w/c/language/operator_precedence
@@ -289,6 +293,4 @@ pub enum UnaryOp {
     Minus,
     BitwiseNegation,
     LogicalNegation,
-    PlusPlus,
-    MinusMinus,
 }
