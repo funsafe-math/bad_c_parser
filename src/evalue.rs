@@ -328,6 +328,14 @@ impl Compile for Expression {
                 ctx.asm.push(format!("lea rax, [rel {}]", &label));
                 // ctx.asm.push(format!("mov rax, rdi"));
             }
+            Expression::IndexOperator(identifier, expr) => {
+                //TODO: identifier must be ptr
+                expr.compile(ctx);
+                ctx.asm.push(format!("lea rdx, [rax*8]"));
+                ctx.load_variable(&identifier.name);
+                ctx.asm.push(format!("add rax, rdx"));
+                ctx.asm.push(format!("mov rax, [rax]"));
+            },
         }
     }
 }

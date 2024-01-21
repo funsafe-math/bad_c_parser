@@ -205,6 +205,7 @@ pub enum Expression {
     Assignment(Identifier, Box<Expression>),
     CompoundAssignment(Identifier, BinaryOperator, Box<Expression>),
     FunctionCall(Identifier, Vec<Box<Expression>>), // name+arguments
+    IndexOperator(Identifier, Box<Expression>), // name + index expr
 }
 
 // Precedence: https://en.cppreference.com/w/c/language/operator_precedence

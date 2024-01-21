@@ -9,7 +9,7 @@ For grammar, go to [c.lalrpop](src/c.lalrpop) file.
 - [x] Function declaration handling
 - [-] Error handling
 - [-] Nice error handling
-- [ ] Comment support
+- [x] Comment support
 - [ ] C preprocessor support
 - [ ] Optimization pass
 - [ ] Scopes

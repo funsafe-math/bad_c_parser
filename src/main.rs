@@ -130,7 +130,11 @@ fn main() {
             Err(err) => {
                 println!("Failed to parse file {}", filepath);
                 match err {
-                    lalrpop_util::ParseError::InvalidToken { location } => todo!(),
+                    lalrpop_util::ParseError::InvalidToken { location } => {
+                        println!("Parse error: Invalid token");
+                        print_souce_location(&code, location);
+
+                    },
                     lalrpop_util::ParseError::UnrecognizedEof { location, expected } => todo!(),
                     lalrpop_util::ParseError::UnrecognizedToken { token, expected } => {
                         let (begin, token, len) = token;
