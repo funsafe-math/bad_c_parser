@@ -1,6 +1,4 @@
-use std::{
-    collections::BTreeSet, collections::HashMap,
-};
+use std::{collections::BTreeSet, collections::HashMap, env::var, ops::Add};
 
 use crate::ast::*;
 
@@ -35,10 +33,12 @@ impl Context {
     // Load variable at name to rax
     pub fn load_variable(&mut self, name: &str) {
         let offset = self.top_frame().pushed_on_stack_since_begin;
-        if let Some(ix) = self.top_frame().get_variable_ix(name) {
+        if let Ok(variable) = self.top_frame().get_variable(name) {
+            let ix = variable.position_on_stack;
+            let size = variable.type_specifier.size();
             self.asm.push(format!(
                 "mov rax, [rsp+{}]  ; Load {}",
-                ix + 8 + offset,
+                ix + size + offset,
                 name
             ));
         } else {
@@ -49,10 +49,15 @@ impl Context {
 
     pub fn load_variable_ptr(&mut self, name: &str) {
         let offset = self.top_frame().pushed_on_stack_since_begin;
-        if let Some(ix) = self.top_frame().get_variable_ix(name) {
+        if let Ok(variable) = self.top_frame().get_variable(name) {
+            let ix = variable.position_on_stack;
+            let size = variable.type_specifier.size();
             self.asm.push(format!("mov rax, rsp  ; Load {} ptr", name));
-            self.asm
-                .push(format!("add rax, {}  ; Load {} ptr", ix + 8 + offset, name));
+            self.asm.push(format!(
+                "add rax, {}  ; Load {} ptr",
+                ix + size + offset,
+                name
+            ));
         } else {
             println!("Use of undeclared variable {}, will load 0", name);
             self.asm.push(format!("mov rax, 0"));
@@ -62,10 +67,12 @@ impl Context {
     // Save rax value to location of variable name
     pub fn save_variable(&mut self, name: &str) {
         let offset = self.top_frame().pushed_on_stack_since_begin;
-        if let Some(ix) = self.top_frame().get_variable_ix(name) {
+        if let Ok(variable) = self.top_frame().get_variable(name) {
+            let ix = variable.position_on_stack;
+            let size = variable.type_specifier.size();
             self.asm.push(format!(
                 "mov [rsp+{}], rax  ; Save {}",
-                ix + 8 + offset,
+                ix + size + offset,
                 name
             ));
         } else {
@@ -99,15 +106,34 @@ impl Context {
         let alignment = current_size_on_stack & 0xf;
         8 - alignment
     }
+
+    pub fn get_variable_from_identifier(&self, identifier: &Identifier) -> Result<Variable, String>{
+        self.top_frame_const().get_variable(&identifier.name)
+    }
 }
 
 pub fn calling_convention() -> [&'static str; 6] {
     ["rdi", "rsi", "rdx", "rcx", "r8", "r9"]
 }
 
+#[derive(Debug, Clone)]
+pub struct Variable {
+    type_specifier: TypeSpecifier,
+    position_on_stack: usize,
+}
+
+impl Variable {
+    fn new(type_specifier: TypeSpecifier, position_on_stack: usize) -> Self {
+        Self {
+            type_specifier,
+            position_on_stack,
+        }
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct StackFrme {
-    pub variables: HashMap<String, usize>,
+    pub variables: HashMap<String, Variable>,
     biggest_ix: usize,
     pub size_on_stack: usize,
     pub last_label: usize,
@@ -115,17 +141,34 @@ pub struct StackFrme {
 }
 
 impl StackFrme {
-    fn add_variable(&mut self, name: &str) -> usize {
+    fn add_variable(&mut self, type_specifier: TypeSpecifier, name: &str) -> usize {
         let size_in_bytes = 8;
         let to_add = self.biggest_ix;
-        let _ret = self.variables.insert(name.to_string(), to_add);
+        let _ret = self
+            .variables
+            .insert(name.to_string(), Variable::new(type_specifier, to_add));
         self.biggest_ix += size_in_bytes;
         assert!(self.biggest_ix < self.size_on_stack);
         return to_add;
     }
 
     fn get_variable_ix(&self, name: &str) -> Option<usize> {
-        return self.variables.get(name).copied();
+        if let Some(variable) = self.variables.get(name) {
+            Some(variable.position_on_stack)
+        } else {
+            None
+        }
+    }
+
+    fn get_variable(&self, name: &str) -> Result<Variable, String> {
+        if let Some(variable) = self.variables.get(name) {
+            Ok(variable.clone())
+        } else {
+            Err(format!(
+                "Variable named {} not defined in current scope",
+                name
+            ))
+        }
     }
 
     fn get_next_label_ix(&mut self) -> usize {
@@ -155,9 +198,58 @@ impl Compile for VariableDeclaration {
         if frame.variables.contains_key(&self.identifier.name) {
             println!("Error, variable {} already exists", &self.identifier.name);
         } else {
-            ctx.top_frame().add_variable(&self.identifier.name);
+            ctx.top_frame()
+                .add_variable(self.type_specifier.clone(), &self.identifier.name);
             ctx.save_variable(&self.identifier.name);
         }
+    }
+}
+
+impl Expression {
+    pub fn get_type(&self, ctx: &Context) -> Result<TypeSpecifier, String> {
+        let get_id_type = |identifier: &Identifier| -> Result<TypeSpecifier, String> {
+            Ok(ctx
+                .top_frame_const()
+                .get_variable(&identifier.name)?
+                .type_specifier
+                .clone())
+        };
+        match self {
+            Expression::LiteralNum(_) => Ok(TypeSpecifier::Long), // TODO: fix
+            Expression::LiteralString(s) => Ok(TypeSpecifier::Array(
+                Box::new(TypeSpecifier::Char),
+                s.len() + 1,
+            )), // +1 for null-terminator
+            Expression::UnaryOp(op, expr) => expr.get_type(ctx),
+            Expression::Op(lhs, _, rhs) => lhs.get_type(ctx)? + rhs.get_type(ctx)?,
+            Expression::Variable(identifier) => get_id_type(identifier),
+            Expression::Conditional(_, _, _) => todo!(),
+            Expression::Assignment(i, expr) => get_id_type(i),
+            Expression::CompoundAssignment(_, _, _) => todo!(),
+            Expression::FunctionCall(_, _) => todo!(),
+            Expression::IndexOperator(identifier, _) => {
+                let t = get_id_type(identifier)?;
+                match t {
+                    TypeSpecifier::Pointer(underlying) => Ok(*underlying),
+                    TypeSpecifier::Array(underlying, _) => Ok(*underlying),
+                    _ => Err(format!("Variable {} is not a pointer nor array", identifier.name))
+                }
+
+            },
+            Expression::Ampersand(identifier) => Ok(TypeSpecifier::Pointer(Box::new(get_id_type(identifier)?))),
+            Expression::PostPlusPlus(i) => get_id_type(i),
+            Expression::PostMinusMinus(i) => get_id_type(i),
+            Expression::PrePlusPlus(i) => get_id_type(i),
+            Expression::PreMinusMinus(i) => get_id_type(i),
+        }
+    }
+}
+
+impl Add for TypeSpecifier {
+    type Output = Result<TypeSpecifier, String>;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        todo!()
     }
 }
 
@@ -298,7 +390,7 @@ impl Compile for Expression {
                             got_arguments.len()
                         );
                     } else {
-                        let calling_convention = &["rdi", "rsi", "rdx", "rcx", "r8", "r9"];
+                        let calling_convention = calling_convention();
                         // for (i,arg) in got_arguments.iter().enumerate().rev(){
                         //     arg.compile(ctx);
                         //     ctx.asm.push(format!("push rax  ; prepare argument {} of {}", &expected_args[i].identifier.name, id.name));
@@ -358,8 +450,9 @@ impl Compile for Expression {
             }
             Expression::IndexOperator(identifier, expr) => {
                 //TODO: identifier must be ptr
+                let resulting_type = self.get_type(ctx).unwrap(); // TODO: make it '?'
                 expr.compile(ctx);
-                ctx.asm.push(format!("lea rdx, [rax*8]"));
+                ctx.asm.push(format!("lea rdx, [rax*{}]", resulting_type.size()));
                 ctx.load_variable(&identifier.name);
                 ctx.asm.push(format!("add rax, rdx"));
                 ctx.asm.push(format!("mov rax, [rax]"));
@@ -369,11 +462,14 @@ impl Compile for Expression {
             }
             Expression::PostPlusPlus(identifier) => {
                 ctx.load_variable(&identifier.name);
-                ctx.emit_push("rax", &format!("Save {} pre incrementation", &identifier.name));
+                ctx.emit_push(
+                    "rax",
+                    &format!("Save {} pre incrementation", &identifier.name),
+                );
                 ctx.asm.push(format!("inc rax"));
                 ctx.save_variable(&identifier.name);
                 ctx.emit_pop("rax", "");
-            },
+            }
             Expression::PostMinusMinus(identifier) => {
                 let name = &identifier.name;
                 ctx.load_variable(name);
@@ -381,19 +477,19 @@ impl Compile for Expression {
                 ctx.asm.push(format!("dec rax"));
                 ctx.save_variable(name);
                 ctx.emit_pop("rax", "");
-            },
+            }
             Expression::PrePlusPlus(identifier) => {
                 let name = &identifier.name;
                 ctx.load_variable(name);
                 ctx.asm.push(format!("inc rax"));
                 ctx.save_variable(name);
-            },
+            }
             Expression::PreMinusMinus(identifier) => {
                 let name = &identifier.name;
                 ctx.load_variable(name);
                 ctx.asm.push(format!("dec rax"));
                 ctx.save_variable(name);
-            },
+            }
         }
     }
 }
@@ -557,7 +653,8 @@ impl Compile for FunctionDefinition {
         let calling_convention = calling_convention();
         for arg in &self.arguments {
             ctx.top_frame().size_on_stack += arg.type_specifier.size();
-            ctx.top_frame().add_variable(&arg.identifier.name);
+            ctx.top_frame()
+                .add_variable(arg.type_specifier.clone(), &arg.identifier.name);
         }
 
         // Allocate space for stack variables
@@ -603,6 +700,9 @@ impl Compile for FunctionDefinition {
 
         // Indent fuction code
         for instr in ctx.asm.iter_mut().skip(first_function_instruction_ix) {
+            if instr.starts_with('.') {
+                continue;
+            }
             *instr = format!("    {}", &instr);
         }
     }
