@@ -203,6 +203,8 @@ pub TypeSpecifier: TypeSpecifier = {
 pub VariableDeclaration: VariableDeclaration  = {
     <t:TypeSpecifier> <i:Identifier> ";" => VariableDeclaration::new(t,i,None),
     <t:TypeSpecifier> <i:Identifier> "=" <e:Expression> ";" => VariableDeclaration::new(t,i,Some(e)),
+
+    <t:TypeSpecifier> <i:Identifier> "[" <c:LiteralNum> "]" ";" => VariableDeclaration::new(TypeSpecifier::Array(Box::new(t), c.try_into().unwrap()), i,None),
 }
 
 pub UnaryOp: UnaryOp = {

@@ -1,8 +1,3 @@
-
-
-
-
-
 use lalrpop_util::lalrpop_mod;
 
 use std::fs;

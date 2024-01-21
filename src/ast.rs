@@ -243,12 +243,13 @@ pub enum TypeSpecifier {
     Double,
     Void,
     Pointer(Box<TypeSpecifier>),
+    Array(Box<TypeSpecifier>, usize),
 }
 
 impl TypeSpecifier {
     pub fn size(&self) -> usize {
         match self {
-            TypeSpecifier::Char => todo!(),
+            TypeSpecifier::Char => 1,
             TypeSpecifier::Short => todo!(),
             TypeSpecifier::Int => 8, // TODO: fix this
             TypeSpecifier::Long => 8,
@@ -258,6 +259,7 @@ impl TypeSpecifier {
             TypeSpecifier::Double => todo!(),
             TypeSpecifier::Void => todo!(),
             TypeSpecifier::Pointer(_) => 8, // We are on 64bit machine
+            TypeSpecifier::Array(t, count) => t.size() * count, 
         }
     }
 }
