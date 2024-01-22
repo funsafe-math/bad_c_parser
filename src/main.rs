@@ -3,6 +3,7 @@ use lalrpop_util::lalrpop_mod;
 use std::fs;
 use std::fs::File;
 use std::io::Write;
+use std::env;
 mod ast;
 mod evalue;
 
@@ -98,7 +99,13 @@ fn print_souce_location(contents: &str, location: usize){
 }
 
 fn main() {
-    let filepath = "/home/wojciech/projects/studia/metody-i-algorytmy-kompilacji/projekt/parser_project/output/example.c";
+    let args: Vec<String> = env::args().collect();
+    if args.len() < 3 {
+        println!("Usage: {} <input.c> <output.s>", args[0]);
+        return;
+    }
+    let filepath = &args[1];
+    let output_path = &args[2];
     let contents = fs::read_to_string(filepath);
     if let Ok(code) = contents {
         let parsed = c::ProgramParser::new().parse(&code);
@@ -107,7 +114,7 @@ fn main() {
                 println!("Parsed: {:#?}", &parsed);
                 let asm: String = parsed.compile();
                 println!("Generated asm: \n{}", asm);
-                let file = File::create("/home/wojciech/projects/studia/metody-i-algorytmy-kompilacji/projekt/parser_project/output/output.s");
+                let file = File::create(output_path);
                 match file {
                     Ok(mut file) => {
                         let result = file.write_all(asm.as_bytes());
