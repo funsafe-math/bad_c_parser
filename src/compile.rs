@@ -1,4 +1,4 @@
-use std::{collections::BTreeSet, collections::HashMap, env::var, ops::Add};
+use std::{collections::BTreeSet, collections::HashMap, ops::Add};
 
 use crate::ast::*;
 
@@ -202,14 +202,14 @@ impl StackFrme {
 }
 
 pub trait Compile {
-    fn compile(&self, ctx: &mut Context);
+    fn compile(&self, ctx: &mut Context) -> Result<(), String>;
 }
 
 impl Compile for VariableDeclaration {
-    fn compile(&self, ctx: &mut Context) {
+    fn compile(&self, ctx: &mut Context) -> Result<(), std::string::String> {
         match &self.expression {
             Some(expr) => {
-                expr.compile(ctx);
+                expr.compile(ctx)?;
             }
             None => {
                 println!(
@@ -218,7 +218,7 @@ impl Compile for VariableDeclaration {
                 );
             }
         }
-        let frame = ctx.stack.last_mut().unwrap();
+        let frame = ctx.top_frame();
         if frame.variables.contains_key(&self.identifier.name) {
             println!("Error, variable {} already exists", &self.identifier.name);
         } else {
@@ -226,6 +226,7 @@ impl Compile for VariableDeclaration {
                 .add_variable(self.type_specifier.clone(), &self.identifier.name);
             ctx.save_variable(&self.identifier.name);
         }
+        Ok(())
     }
 }
 
@@ -244,14 +245,14 @@ impl Expression {
                 Box::new(TypeSpecifier::Char),
                 s.len() + 1,
             )), // +1 for null-terminator
-            Expression::UnaryOp(op, expr) => expr.get_type(ctx),
+            Expression::UnaryOp(_, expr) => expr.get_type(ctx),
             Expression::Op(lhs, _, rhs) => lhs.get_type(ctx)? + rhs.get_type(ctx)?,
             Expression::Variable(identifier) => get_id_type(identifier),
             Expression::Conditional(_, expr_a, expr_b) => {
                 let common_type = expr_a.get_type(ctx)? + expr_b.get_type(ctx)?;
                 common_type
             }
-            Expression::Assignment(lvalue, expr) => match lvalue {
+            Expression::Assignment(lvalue, _) => match lvalue {
                 LValue::Identifier(i) => get_id_type(i),
                 LValue::PointerDereference(_, _) => todo!(),
                 LValue::PointerDereferenceConstant(_, _) => todo!(),
@@ -301,7 +302,7 @@ impl TypeSpecifier {
 
 impl Compile for BinaryOperator {
     // Will perform operation of rax and rbx
-    fn compile(&self, ctx: &mut Context) {
+    fn compile(&self, ctx: &mut Context) -> Result<(), std::string::String> {
         match self {
             BinaryOperator::Multiply => {
                 ctx.asm.push(format!("imul rax, rbx"));
@@ -356,17 +357,18 @@ impl Compile for BinaryOperator {
                 ctx.asm.push(format!("setle al"));
             }
         }
+        Ok(())
     }
 }
 
 impl Compile for Expression {
-    fn compile(&self, ctx: &mut Context) {
+    fn compile(&self, ctx: &mut Context) -> Result<(), std::string::String> {
         match &self {
             Expression::LiteralNum(value) => {
                 ctx.asm.push(format!("mov rax, {}", value));
             }
             Expression::UnaryOp(op, expr) => {
-                expr.compile(ctx);
+                expr.compile(ctx)?;
                 match op {
                     UnaryOp::Minus => {
                         ctx.asm.push(format!("neg rax"));
@@ -383,43 +385,43 @@ impl Compile for Expression {
                 }
             }
             Expression::Op(lhs, op, rhs) => {
-                lhs.compile(ctx);
+                lhs.compile(ctx)?;
                 ctx.emit_push("rax", "");
-                rhs.compile(ctx);
+                rhs.compile(ctx)?;
                 ctx.asm.push(format!("mov rbx, rax"));
                 ctx.emit_pop("rax", "");
                 // lhs - rax
                 // rhs - rbx
-                op.compile(ctx);
+                op.compile(ctx)?;
             }
             Expression::Variable(var) => {
                 let name = &var.name;
-                ctx.load_variable(name);
+                ctx.load_variable(name)?;
             }
             Expression::Conditional(conditional, expr_a, expr_b) => {
                 let label_ix = ctx.top_frame().get_next_label_ix();
                 let else_conditional = format!(".LBBL{}_2", label_ix);
                 let post_conditional = format!(".LBBL{}_3", label_ix);
-                conditional.compile(ctx);
+                conditional.compile(ctx)?;
                 ctx.asm.push(format!("cmp rax, 0"));
                 ctx.asm.push(format!("je {}", &else_conditional));
-                expr_a.compile(ctx);
+                expr_a.compile(ctx)?;
                 ctx.asm.push(format!("jmp {}", &post_conditional));
                 ctx.asm.push(format!("{}:", &else_conditional));
-                expr_b.compile(ctx);
+                expr_b.compile(ctx)?;
                 ctx.asm.push(format!("{}:", &post_conditional));
             }
             Expression::Assignment(id, expr) => {
                 match id {
                     LValue::Identifier(identifier) => {
-                        let lhs = ctx.get_variable_from_identifier(identifier).unwrap(); // TODO: replace unwrap with ? operator
-                        let rhs_type = expr.get_type(ctx).unwrap();
+                        let lhs = ctx.get_variable_from_identifier(identifier)?;
+                        let rhs_type = expr.get_type(ctx)?;
                         assert!(
                             rhs_type.convertable_to(&lhs.type_specifier),
                             "rhs must be convertable to lhs"
                         );
                         let name = &identifier.name;
-                        expr.compile(ctx);
+                        expr.compile(ctx)?;
                         ctx.save_variable(name);
                     }
                     LValue::PointerDereference(identifier, index_expr) => {
@@ -437,7 +439,7 @@ impl Compile for Expression {
                             _ => panic!(),
                         };
 
-                        index_expr.compile(ctx);
+                        index_expr.compile(ctx)?;
                         ctx.emit_pop("rbx", "");
                         ctx.asm.push(format!(
                             "lea rax, [rbx + rax * {}]",
@@ -445,7 +447,7 @@ impl Compile for Expression {
                         ));
                         ctx.emit_push("rax", "");
 
-                        expr.compile(ctx);
+                        expr.compile(ctx)?;
                         ctx.emit_pop("rbx", "");
                         ctx.asm.push(format!("mov [rbx], {}", register));
                     }
@@ -469,18 +471,18 @@ impl Compile for Expression {
                             _ => panic!(),
                         };
 
-                        expr.compile(ctx);
+                        expr.compile(ctx)?;
                         ctx.emit_pop("rbx", "");
                         ctx.asm.push(format!("mov [rbx], {}", register));
                     }
                 }
             }
             Expression::CompoundAssignment(id, op, expr) => {
-                expr.compile(ctx);
+                expr.compile(ctx)?;
                 ctx.asm.push(format!("mov rbx, rax"));
                 let name = &id.name;
-                ctx.load_variable(name);
-                op.compile(ctx);
+                ctx.load_variable(name)?;
+                op.compile(ctx)?;
                 ctx.save_variable(name);
             }
             Expression::FunctionCall(id, got_arguments) => {
@@ -506,7 +508,7 @@ impl Compile for Expression {
                         for (i, (arg, reg)) in
                             got_arguments.iter().zip(calling_convention).enumerate()
                         {
-                            arg.compile(ctx);
+                            arg.compile(ctx)?;
                             let variable_name = match i < expected_args.len() {
                                 true => format!("{}", &expected_args[i].identifier.name),
                                 false => format!("varidic-{}", i),
@@ -552,18 +554,18 @@ impl Compile for Expression {
             Expression::IndexOperator(identifier, expr) => {
                 //TODO: identifier must be ptr
                 let resulting_type = self.get_type(ctx).unwrap(); // TODO: make it '?'
-                expr.compile(ctx);
+                expr.compile(ctx)?;
                 ctx.asm
                     .push(format!("lea rdx, [rax*{}]", resulting_type.size()));
-                ctx.load_variable(&identifier.name);
+                ctx.load_variable(&identifier.name)?;
                 ctx.asm.push(format!("add rax, rdx"));
                 ctx.asm.push(format!("mov rax, [rax]"));
             }
             Expression::Ampersand(identifier) => {
-                ctx.load_ptr_to_variable(&identifier.name);
+                ctx.load_ptr_to_variable(&identifier.name)?;
             }
             Expression::PostPlusPlus(identifier) => {
-                ctx.load_variable(&identifier.name);
+                ctx.load_variable(&identifier.name)?;
                 ctx.emit_push(
                     "rax",
                     &format!("Save {} pre incrementation", &identifier.name),
@@ -574,7 +576,7 @@ impl Compile for Expression {
             }
             Expression::PostMinusMinus(identifier) => {
                 let name = &identifier.name;
-                ctx.load_variable(name);
+                ctx.load_variable(name)?;
                 ctx.emit_push("rax", &format!("Save {} pre decrementation", name));
                 ctx.asm.push(format!("dec rax"));
                 ctx.save_variable(name);
@@ -582,13 +584,13 @@ impl Compile for Expression {
             }
             Expression::PrePlusPlus(identifier) => {
                 let name = &identifier.name;
-                ctx.load_variable(name);
+                ctx.load_variable(name)?;
                 ctx.asm.push(format!("inc rax"));
                 ctx.save_variable(name);
             }
             Expression::PreMinusMinus(identifier) => {
                 let name = &identifier.name;
-                ctx.load_variable(name);
+                ctx.load_variable(name)?;
                 ctx.asm.push(format!("dec rax"));
                 ctx.save_variable(name);
             }
@@ -597,42 +599,43 @@ impl Compile for Expression {
                 ctx.asm.push(format!("mov rax, {}", size));
             },
         }
+        Ok(())
     }
 }
 
 impl Compile for Statement {
-    fn compile(&self, ctx: &mut Context) {
+    fn compile(&self, ctx: &mut Context) -> Result<(), std::string::String> {
         match &self {
             Statement::ReturnExpression(return_expr) => {
-                return_expr.compile(ctx);
+                return_expr.compile(ctx)?;
                 ctx.generate_epilogue();
 
                 ctx.asm.push(format!("ret"));
             }
             Statement::Expression(expression) => {
-                expression.compile(ctx);
+                expression.compile(ctx)?;
             }
             Statement::If(if_statement) => match if_statement {
                 If::SingleBranch(expr, statement) => {
-                    expr.compile(ctx);
+                    expr.compile(ctx)?;
                     let label_ix = ctx.top_frame().get_next_label_ix();
                     let post_conditional = format!(".LBBL{}_post_conditional", label_ix);
                     ctx.asm.push(format!("cmp rax, 0"));
                     ctx.asm.push(format!("je {}", post_conditional));
-                    statement.compile(ctx);
+                    statement.compile(ctx)?;
                     ctx.asm.push(format!("{}:", post_conditional));
                 }
                 If::TwoBranch(expr, on_true, on_false) => {
-                    expr.compile(ctx);
+                    expr.compile(ctx)?;
                     let label_ix = ctx.top_frame().get_next_label_ix();
                     let else_conditional = format!(".LBBL{}_2", label_ix);
                     let post_conditional = format!(".LBBL{}_3", label_ix);
                     ctx.asm.push(format!("cmp rax, 0"));
                     ctx.asm.push(format!("je {}", &else_conditional));
-                    on_true.compile(ctx);
+                    on_true.compile(ctx)?;
                     ctx.asm.push(format!("jmp {}", &post_conditional));
                     ctx.asm.push(format!("{}:", &else_conditional));
-                    on_false.compile(ctx);
+                    on_false.compile(ctx)?;
                     ctx.asm.push(format!("{}:", &post_conditional));
                 }
             },
@@ -640,7 +643,7 @@ impl Compile for Statement {
                 CompoundStatement::Empty => {}
                 CompoundStatement::StatementList(list) => {
                     for item in list {
-                        item.compile(ctx);
+                        item.compile(ctx)?;
                     }
                 }
             },
@@ -649,21 +652,21 @@ impl Compile for Statement {
                 let post = format!(".LBBL{}_2", label_ix);
                 let pre = format!(".LBBL{}_0", label_ix);
                 if let Some(a_expr) = a_expr {
-                    a_expr.compile(ctx);
+                    a_expr.compile(ctx)?;
                 }
 
                 ctx.asm.push(format!("{}:", &pre));
                 if let Some(b_expr) = b_expr {
-                    b_expr.compile(ctx);
+                    b_expr.compile(ctx)?;
                     ctx.asm.push(format!("cmp rax, 0"));
                     ctx.asm.push(format!("je {}", &post));
                 } else {
                     // Infinite loop
                 }
 
-                statement.compile(ctx);
+                statement.compile(ctx)?;
                 if let Some(c_expr) = c_expr {
-                    c_expr.compile(ctx);
+                    c_expr.compile(ctx)?;
                 }
                 ctx.asm.push(format!("jmp {}", &pre));
 
@@ -673,20 +676,20 @@ impl Compile for Statement {
                 let label_ix = ctx.top_frame().get_next_label_ix();
                 let post = format!(".LBBL{}_2", label_ix);
                 let pre = format!(".LBBL{}_0", label_ix);
-                decl.compile(ctx);
+                decl.compile(ctx)?;
 
                 ctx.asm.push(format!("{}:", &pre));
                 if let Some(b_expr) = b_expr {
-                    b_expr.compile(ctx);
+                    b_expr.compile(ctx)?;
                     ctx.asm.push(format!("cmp rax, 0"));
                     ctx.asm.push(format!("je {}", &post));
                 } else {
                     // Infinite loop
                 }
 
-                statement.compile(ctx);
+                statement.compile(ctx)?;
                 if let Some(c_expr) = c_expr {
-                    c_expr.compile(ctx);
+                    c_expr.compile(ctx)?;
                 }
                 ctx.asm.push(format!("jmp {}", &pre));
 
@@ -697,10 +700,10 @@ impl Compile for Statement {
                 let pre = format!(".LBBL{}_0", label_ix);
                 let post = format!(".LBBL{}_2", label_ix);
                 ctx.asm.push(format!("{}:", &pre));
-                expr.compile(ctx);
+                expr.compile(ctx)?;
                 ctx.asm.push(format!("cmp rax, 0"));
                 ctx.asm.push(format!("je {}", &post));
-                statement.compile(ctx);
+                statement.compile(ctx)?;
                 ctx.asm.push(format!("jmp {}", &pre));
                 ctx.asm.push(format!("{}:", &post));
             }
@@ -710,8 +713,8 @@ impl Compile for Statement {
                 let post = format!(".LBBL{}_2", label_ix);
 
                 ctx.asm.push(format!("{}:", &pre));
-                statement.compile(ctx);
-                expr.compile(ctx);
+                statement.compile(ctx)?;
+                expr.compile(ctx)?;
                 ctx.asm.push(format!("cmp rax, 0"));
                 ctx.asm.push(format!("je {}", &post));
                 ctx.asm.push(format!("jmp {}", &pre));
@@ -721,24 +724,26 @@ impl Compile for Statement {
             Statement::Continue => todo!(),
             Statement::Empty => todo!(),
         }
+        Ok(())
     }
 }
 
 impl Compile for BlockItem {
-    fn compile(&self, ctx: &mut Context) {
+    fn compile(&self, ctx: &mut Context) -> Result<(), std::string::String> {
         match self {
             BlockItem::Statement(statement) => {
-                statement.compile(ctx);
+                statement.compile(ctx)?;
             }
             BlockItem::Declaration(decl) => {
-                decl.compile(ctx);
+                decl.compile(ctx)?;
             }
         }
+        Ok(())
     }
 }
 
 impl Compile for FunctionDefinition {
-    fn compile(&self, ctx: &mut Context) {
+    fn compile(&self, ctx: &mut Context) -> Result<(), std::string::String> {
         ctx.functions
             .insert(self.identifier.name.clone(), self.into_declaration());
         ctx.asm.push(format!("global {}", self.identifier.name));
@@ -787,7 +792,7 @@ impl Compile for FunctionDefinition {
             CompoundStatement::Empty => {} // skip
             CompoundStatement::StatementList(list) => {
                 for item in list {
-                    item.compile(ctx);
+                    item.compile(ctx)?;
                 }
             }
         }
@@ -810,18 +815,19 @@ impl Compile for FunctionDefinition {
             }
             *instr = format!("    {}", &instr);
         }
+        Ok(())
     }
 }
 
 impl Program {
-    pub fn compile(&self) -> String {
+    pub fn compile(&self) -> Result<String, String> {
         let mut ctx = Context::default();
         ctx.asm.push(format!("section .text"));
         for item in &self.top_level_items {
             match item {
                 TopLevelItem::Function(function) => {
                     println!("Compiling function {:#?}", &function.identifier.name);
-                    function.compile(&mut ctx);
+                    function.compile(&mut ctx)?;
                 }
                 TopLevelItem::VariableDeclaration(_variable) => {
                     todo!()
@@ -865,6 +871,6 @@ impl Program {
             }
         }
 
-        ctx.asm.iter().map(|x| format!("{}\n", x)).collect()
+        Ok(ctx.asm.iter().map(|x| format!("{}\n", x)).collect())
     }
 }
