@@ -216,6 +216,7 @@ pub enum Expression {
     PostMinusMinus(Identifier),
     PrePlusPlus(Identifier),
     PreMinusMinus(Identifier),
+    SizeOf(Box<Expression>),
 }
 
 // Precedence: https://en.cppreference.com/w/c/language/operator_precedence

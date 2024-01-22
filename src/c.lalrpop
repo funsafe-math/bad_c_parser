@@ -175,6 +175,7 @@ pub Factor: Box<Expression> = {
     "--" <i:Identifier> => Box::new(Expression::PreMinusMinus(i)),
     <i:Identifier> "++" => Box::new(Expression::PostPlusPlus(i)),
     <i:Identifier> "--" => Box::new(Expression::PostMinusMinus(i)),
+    "sizeof" "(" <e:Expression> ")" => Box::new(Expression::SizeOf(e)),
 }
 
 pub LValue: LValue = {
@@ -251,6 +252,7 @@ match {
     "do",
     "break",
     "continue",
+    "sizeof",
     "{",
     "}",
     "=",

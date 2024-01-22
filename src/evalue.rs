@@ -276,6 +276,7 @@ impl Expression {
             Expression::PostMinusMinus(i) => get_id_type(i),
             Expression::PrePlusPlus(i) => get_id_type(i),
             Expression::PreMinusMinus(i) => get_id_type(i),
+            Expression::SizeOf(_) => Ok(TypeSpecifier::Long),
         }
     }
 }
@@ -591,6 +592,10 @@ impl Compile for Expression {
                 ctx.asm.push(format!("dec rax"));
                 ctx.save_variable(name);
             }
+            Expression::SizeOf(expr) => {
+                let size = expr.get_type(ctx).unwrap().size();
+                ctx.asm.push(format!("mov rax, {}", size));
+            },
         }
     }
 }

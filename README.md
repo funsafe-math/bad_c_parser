@@ -14,7 +14,7 @@ For grammar, go to [c.lalrpop](src/c.lalrpop) file.
 - [ ] Optimization pass
 - [ ] Scopes
 
-# Some x86 definitons
+# Some x86 defintions
 ## Registers:
 - RBP - Base pointer - address of start of current stack frame
 - RSP - Stack pointer - address of start top of the stack
