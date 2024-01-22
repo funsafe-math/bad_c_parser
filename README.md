@@ -1,5 +1,7 @@
 # Bad C parser
-A C parser based on [lalrpop](https://github.com/lalrpop/lalrpop/tree/master)
+A C parser and compiler based on [lalrpop](https://github.com/lalrpop/lalrpop/tree/master)
+A very limited subset of C is implemented, but you can use standard C libraries.
+
 ## Grammar
 For grammar, go to [c.lalrpop](src/c.lalrpop) file.
 
