@@ -4,11 +4,11 @@ A C parser based on [lalrpop](https://github.com/lalrpop/lalrpop/tree/master)
 For grammar, go to [c.lalrpop](src/c.lalrpop) file.
 
 ## TODO
-- [ ] Fill in asm emission
-- [-] Extern function declaration
+- [x] Fill in asm emission
+- [x] Extern function declaration
 - [x] Function declaration handling
-- [-] Error handling
-- [-] Nice error handling
+- [x] Error handling
+- [ ] Nice error handling
 - [x] Comment support
 - [ ] C preprocessor support
 - [ ] Optimization pass
