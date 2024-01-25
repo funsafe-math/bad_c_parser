@@ -1,6 +1,5 @@
 use std::str::FromStr;
 use crate::ast::*;
-// https://norasandler.com/2017/11/29/Write-a-Compiler.html
 
 grammar;
 
